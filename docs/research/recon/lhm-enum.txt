@@ -1,0 +1,27 @@
+﻿lib dir: <local scratch>\lhmfw
+[Motherboard] Lenovo 3376
+[Cpu] Intel Core Ultra 5 225
+   Temperature  'Core Max'                 = 
+   Temperature  'Core Average'             = 
+   Temperature  'P-Core #1'                = 
+   Temperature  'P-Core #2'                = 
+   Temperature  'E-Core #1'                = 
+   Temperature  'E-Core #2'                = 
+   Temperature  'E-Core #3'                = 
+   Temperature  'E-Core #4'                = 
+   Temperature  'P-Core #3'                = 
+   Temperature  'P-Core #4'                = 
+   Temperature  'P-Core #5'                = 
+   Temperature  'P-Core #6'                = 
+   Temperature  'CPU Package'              = 
+   Temperature  'P-Core #1 Distance to TjMax' = 
+   Temperature  'P-Core #2 Distance to TjMax' = 
+   Temperature  'E-Core #1 Distance to TjMax' = 
+   Temperature  'E-Core #2 Distance to TjMax' = 
+   Temperature  'E-Core #3 Distance to TjMax' = 
+   Temperature  'E-Core #4 Distance to TjMax' = 
+   Temperature  'P-Core #3 Distance to TjMax' = 
+   Temperature  'P-Core #4 Distance to TjMax' = 
+   Temperature  'P-Core #5 Distance to TjMax' = 
+   Temperature  'P-Core #6 Distance to TjMax' = 
+enum complete

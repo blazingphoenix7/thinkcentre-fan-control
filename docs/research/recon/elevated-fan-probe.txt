@@ -1,0 +1,192 @@
+﻿=== ELEVATED FAN PROBE 2026-07-08T13:29:42  admin=True ===
+
+### [1] LENOVO_GAMEZONE_DATA (read-only)
+GetVersion                    -> OK   Data=10 ReturnValue=True
+GetProductInfo                -> OK   Data=0 ReturnValue=True
+IsSupportSmartFan             -> OK   Data=4 ReturnValue=True
+GetSupportThermalMode         -> OK   Data=14 ReturnValue=True
+GetSmartFanMode               -> OK   Data=3 ReturnValue=True
+GetFanList                    -> OK   Data=0 ReturnValue=True
+GetFanSpeed(0)                -> OK   Data=0 ReturnValue=True
+GetFanSpeed(1)                -> OK   Data=0 ReturnValue=True
+GetFanSpeed(2)                -> OK   Data=0 ReturnValue=True
+GetFanSpeed(3)                -> OK   Data=0 ReturnValue=True
+GetSensorTemperature(0)       -> OK   Data=65535 ReturnValue=True
+GetSensorTemperature(1)       -> OK   Data=65535 ReturnValue=True
+GetSensorTemperature(2)       -> OK   Data=65535 ReturnValue=True
+GetSensorTemperature(3)       -> OK   Data=65535 ReturnValue=True
+GetSensorTemperature(4)       -> OK   Data=65535 ReturnValue=True
+GetSensorTemperature(5)       -> OK   Data=65535 ReturnValue=True
+GetSensorTemperature(6)       -> OK   Data=65535 ReturnValue=True
+GetSensorTemperature(7)       -> OK   Data=65535 ReturnValue=True
+IsSupportWaterCooling         -> OK   Data=0 ReturnValue=True
+GetHardwareInfoSupportVersion -> OK   Data=0 ReturnValue=True
+GetCpuFrequency               -> OK   Data=0 ReturnValue=True
+IsSupportGpuOC                -> OK   Data=0 ReturnValue=True
+IsSupportCpuOC                -> OK   Data=0 ReturnValue=True
+
+### [2] LENOVO_FAN_METHOD (read-only)
+GetFanZoneSupportList         -> OK   Data=0 ReturnValue=True
+GetFanZoneData(Fan=0,Sensor=0) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=0,Sensor=1) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=0,Sensor=2) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=0,Sensor=3) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=1,Sensor=0) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=1,Sensor=1) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=1,Sensor=2) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=1,Sensor=3) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=2,Sensor=0) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=2,Sensor=1) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=2,Sensor=2) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=2,Sensor=3) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=3,Sensor=0) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=3,Sensor=1) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=3,Sensor=2) -> OK   ret=True size=0 table=(empty)
+GetFanZoneData(Fan=3,Sensor=3) -> OK   ret=True size=0 table=(empty)
+
+### [3] LENOVO_OTHER_METHOD (read-only)
+IsSupportFullSpeedMode        -> OK   Data=0 ReturnValue=True
+GetCustomModeAbility          -> OK   Data=0 ReturnValue=True
+Get_Support_LegionZone_Version-> OK   Version=5 ReturnValue=True
+GetDeviceType                 -> OK   CpuType=0 GpuType=0 ReturnValue=True
+
+### [4] Lenovo_DT_* desktop telemetry (instances + any Get methods)
+Lenovo_DT_GetCPUFan  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+Lenovo_DT_GetSYSFan  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+Lenovo_DT_GetPWRFan  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+Lenovo_DT_GetCPUTemp  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+Lenovo_DT_GetPCHTemp  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+Lenovo_DT_GetSYSTemp  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+Lenovo_DT_GetThermalStatus  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+Lenovo_DT_GetHealthStatus  methods=[]
+  instance: Active=True InstanceName=ACPI\PNP0C14\1_0 return=0
+
+### [5] Capability / data blobs
+LENOVO_CAPABILITY_DATA_00 -> Active=True Capability=73 DefaultValue=1 IDs=2228224 InstanceName=ACPI\PNP0C14\GamingWMI_0
+LENOVO_CAPABILITY_DATA_01 -> ERR Invalid object
+LENOVO_INTELLIGENT_OP_LIST -> Active=True InstanceName=ACPI\PNP0C14\GamingWMI_0 mode= processname=
+LENOVO_LIGHTING_INFO_LIST -> ERR Invalid object
+LENOVO_GAMEZONE_CPU_Power_DATA -> ERR Invalid object
+LENOVO_GAMEZONE_GPU_THERMAL_SETTING_DATA -> ERR Invalid object
+
+### [6] BIOS settings (Lenovo_BiosSetting, read-only enumeration)
+count=107
+  Language,en;[Optional:en,fr,ru,zh,es]
+  SetupModeSelect,Graphic;[Optional:Text,Graphic]
+  USBPortAccess,Enabled;[Optional:Disabled,Enabled]
+  USBEnumerationDelay,Disabled;[Optional:Disabled,Enabled]
+  FrontUSBPorts,Enabled;[Optional:Disabled,Enabled]
+  USBPort1,Enabled;[Optional:Disabled,Enabled]
+  USBPort2,Enabled;[Optional:Disabled,Enabled]
+  USBPort3,Enabled;[Optional:Disabled,Enabled]
+  USBPort4,Enabled;[Optional:Disabled,Enabled]
+  USBPort5,Enabled;[Optional:Disabled,Enabled]
+  RearUSBPorts,Enabled;[Optional:Disabled,Enabled]
+  USBPort6,Enabled;[Optional:Disabled,Enabled]
+  USBPort7,Enabled;[Optional:Disabled,Enabled]
+  USBPort8,Enabled;[Optional:Disabled,Enabled]
+  USBPort9,Enabled;[Optional:Disabled,Enabled]
+  SATAController,Enabled;[Optional:Disabled,Enabled]
+  SATADrive1,Enabled;[Optional:Disabled,Enabled]
+  SATADrive2,Enabled;[Optional:Disabled,Enabled]
+  M.2Drive1,Enabled;[Optional:Disabled,Enabled]
+  M.2Drive2,Enabled;[Optional:Disabled,Enabled]
+  ConfigureSATAas,AHCI;[Optional:AHCI,RAID]
+  HardDiskPre-delay,Disabled;[Optional:Disabled,3 Seconds,6 Seconds,9 Seconds,12 Seconds,15 Seconds,21 Seconds,30 Seconds]
+  SelectActiveVideo,IGD;[Optional:IGD,Auto]
+  Pre-AllocatedMemorySize,512MB;[Optional:32MB,64MB,128MB,256MB,512MB]
+  OnboardAudioController,Enabled;[Optional:Disabled,Enabled]
+  InternalSpeaker,Enabled;[Optional:Disabled,Enabled]
+  OnboardEthernetController,Enabled;[Optional:Disabled,Enabled]
+  WirelessLANAccess,Enabled;[Optional:Disabled,Enabled]
+  WirelessLANPXE,Disabled;[Optional:Disabled,Enabled]
+  PXEIPV4NetworkStack,Enabled;[Optional:Disabled,Enabled]
+  PXEIPV6NetworkStack,Enabled;[Optional:Disabled,Enabled]
+  PXEBootWaitTime,;[Optional:1 Second,5 Seconds,10 Seconds,30 Seconds,60 Seconds,120 Seconds]
+  TFTPWindowSize,4;[Optional:1,2,3,4]
+  HTTPsBoot,Disabled;[Optional:Disabled,Enabled]
+  LenovoCloudServices,Disabled;[Optional:Disabled,Enabled]
+  ReInstallWindowsFromCloud,Disabled;[Optional:Disabled,Enabled]
+  ASPMSupport,Auto;[Optional:Disabled,Auto]
+  PCIe16xSlotSpeed,Auto;[Optional:Auto,Gen1,Gen2,Gen3,Auto]
+  PCIe1xSlot1Speed,Auto;[Optional:Auto,Gen1,Gen2,Gen3,Auto]
+  PCIe1xSlot2Speed,Auto;[Optional:Auto,Gen1,Gen2,Gen3,Auto]
+  Bluetooth,Enabled;[Optional:Disabled,Enabled]
+  SpeedShiftTechnology,Enabled;[Optional:Disabled,Enabled]
+  CoreMultiProcessing,Enabled;[Optional:Disabled,Enabled]
+  VirtualizationTechnology,Enabled;[Optional:Disabled,Enabled]
+  VTdFeature,Enabled;[Optional:Disabled,Enabled]
+  TXTFeature,Disabled;[Optional:Disabled,Enabled]
+  IOMMU,Enabled;[Optional:Disabled,Enabled]
+  C1ESupport,Enabled;[Optional:Disabled,Enabled]
+  CStateSupport,C1C3C6C7C8C10;[Optional:C1,C1C3,C1C3C6,C1C3C6C7,C1C3C6C7C8,C1C3C6C7C8C10]
+  TurboMode,Enabled;[Optional:Disabled,Enabled]
+  ManageabilityControl,Enabled;[Optional:Disabled,Enabled]
+  USBProvisioning,Disabled;[Optional:Disabled,Enabled]
+  IntelSIPPSupport,Enabled;[Optional:Disabled,Enabled]
+  DustShieldAlert,Disabled;[Optional:Disabled,Enabled]
+  IntelDPTFSupport,Enabled;[Optional:Disabled,Enabled]
+  AfterPowerLoss,Last State;[Optional:Power Off,Power On,Last State]
+  EnhancedPowerSavingMode,Disabled;[Optional:Disabled,Enabled]
+  SmartPowerOn,Enabled;[Optional:Disabled,Enabled]
+  IntelligentCoolingPerformanceMode,Performance Mode;[Optional:Performance Mode,Balance Mode,Full speed]
+  WakeonLAN,Boot Order;[Optional:Disabled,Boot Order,Network Group,Storage Group,SATA 1,SATA 2,M.2 Drive 1,M.2 Drive 2,USB HDD,USB CDROM,Network 1,Network 2,Network 3]
+  WakeUponAlarm,Disabled;[Optional:Single Event,Daily Event,Weekly Event,Disabled,User Defined]
+  StartupSequence,Boot Order;[Optional:Boot Order,Network Group,Storage Group,SATA 1,SATA 2,M.2 Drive 1,M.2 Drive 2,USB HDD,USB CDROM,Network 1,Network 2,Network 3][Status:ShowOnly]
+  AlarmTime,[00:00:00][Status:ShowOnly]
+  AlarmDate,[01/01/2024][Status:ShowOnly]
+  AlarmDayofWeek,Sunday;[Optional:Sunday,Monday,Tuesday,Wednesday,Thursday,Friday,Saturday][Status:ShowOnly]
+  UserDefinedAlarmSunday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+  UserDefinedAlarmMonday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+  UserDefinedAlarmTuesday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+  UserDefinedAlarmWednesday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+  UserDefinedAlarmThursday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+  UserDefinedAlarmFriday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+  UserDefinedAlarmSaturday,Disabled;[Optional:Disabled,Enabled][Status:ShowOnly]
+  UserDefinedAlarmTime,[00:00:00][Status:ShowOnly]
+  AccessSecuritySettings,Disabled;[Optional:Disabled,Enabled]
+  RemoteSetSMP,Disabled;[Optional:Disabled,Enabled]
+  RequireHDPonSystemBoot,Auto;[Optional:No,Auto,Power On]
+  BlockSIDAuthentication,Enabled;[Optional:Enabled,Disabled]
+  KeyPartReplacementDetect,Disabled;[Optional:Disabled,Notify Only,Authenticate]
+  ResetCertificate,Enter;[Optional:Enter]
+  UsbBootSupport,Enabled;[Optional:Disabled,Enabled]
+  Lenovo_SaveCustomDefaultSettings,;[Optional:]
+  Lenovo_LoadCustomDefaultSettings,;[Optional:]
+  Lenovo_LoadFactoryDefaultSettings,;[Optional:]
+  KeyboardLayout,English;[Optional:English,French,German,Russian,Chinese]
+  BIOSPasswordAtSystemBoot,Yes;[Optional:No,Yes]
+  BIOSPasswordAtReboot,No;[Optional:No,Yes]
+  BIOSPasswordAtBootDeviceList,No;[Optional:No,Yes]
+  RequireSVPwhenFlashing,No;[Optional:No,Yes]
+  AllowJumperClearSVP,Yes;[Optional:No,Yes][Status:ShowOnly]
+  PasswordCountExceededError,Enabled;[Optional:Disabled,Enabled]
+  SecureRollBackPrevention,Yes;[Optional:No,Yes]
+  WindowsUEFIFirmwareUpdate,Enabled;[Optional:Disabled,Enabled]
+  SmartUSBProtection,Disabled;[Optional:Disabled,Read Only,No Access]
+  securewipe,Disabled;[Optional:Disabled,Enabled]
+  SecurityChip,Enabled;[Optional:Disabled,Enabled]
+  PhysicalPresenceforClear,Enabled;[Optional:Disabled,Enabled]
+  SecureBoot,Enabled;[Optional:Disabled,Enabled]
+  AllowMicrosoft3rdPartyUEFICA,Enabled;[Optional:Enabled,Disabled]
+  AbsolutePersistenceModule,Enabled;[Optional:Disabled,Enabled,Permanently Disabled]
+  CoverTamperDetected,Disabled;[Optional:Disabled,Enabled]
+  ConfigurationChangeDetection,Disabled;[Optional:Disabled,Enabled]
+  KeyPartReplacementDetection,Disabled;[Optional:Disabled,Notify Only,Authenticate]
+  Firstbootdevice,Boot Order;[Optional:Boot Order,Network Group,Storage Group,SATA 1,SATA 2,M.2 Drive 1,M.2 Drive 2,USB HDD,USB CDROM,Network 1,Network 2,Network 3]
+  BootUpNumLockStatus,On;[Optional:Off,On]
+  FastBoot,Enabled;[Optional:Disabled,Enabled]
+  OptionKeysDisplay,Disabled;[Optional:Disabled,Enabled]
+  BootOrder,M.2 Drive 1:M.2 Drive 2:SATA 1:SATA 2:VMD:Network 1:Lenovo Cloud 1:USB HDD:USB CDROM;[Excluded from boot order:Network 2:Lenovo Cloud 2:Network 3:Lenovo Cloud 3:Others]
+
+### [7] ACPI thermal zones
+  ACPI\ThermalZone\TZ00_0 = 27.9C
+
+=== END OF PROBE ===

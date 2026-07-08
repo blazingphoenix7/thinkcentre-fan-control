@@ -1,0 +1,19 @@
+# .NET build output
+bin/
+obj/
+*.user
+.vs/
+
+# Downloaded/vendored binaries (re-fetchable; not source)
+lib/pawnio/
+lib/lhm/
+*.zip
+
+# Installer / release output
+dist/
+*.msi
+publish/
+
+# OS cruft
+Thumbs.db
+desktop.ini
