@@ -55,3 +55,21 @@ calls the opaque `FNSL`). Reaching it from Windows requires one of:
 Does a real EC respond at ports 0x62/0x66? A single elevated PawnIO `LpcACPIEC` read of EC RAM
 `0x00–0xFF` settles it: real varied bytes ⇒ path (B) is alive; all-zero/garbage ⇒ (B) is dead,
 choose between (A) and (C).
+
+## RESULT (2026-07-08): Path (B) is ALIVE — a real physical EC responds.
+Elevated PawnIO `LpcACPIEC` probe (standard ACPI EC read handshake, RD_EC=0x80, ports 0x62/0x66):
+**256/256 offsets responded** with genuine, varied data despite the stubbed ACPI EC layer.
+Initial status@0x66 = `0x08`. Notable live bytes (idle):
+```
+0x20:  17 2B 38 34 00 46 48 17 00 00 38 00 00 00 00 31   (23,43,56,52,70,72,23,56,49 — temp block?)
+0x00:  03 A9    0xF0:  13 41                              (candidate fan/RPM words)
+```
+**Consequence:** fine-grain control via **direct EC access through PawnIO is viable** — we talk to
+the physical EC and bypass the virtualized ACPI one. Signed driver, no WinRing0.
+
+### Next steps (revised M1)
+1. **EC-diff** (read-only): capture EC across fan states (SmartFanMode 1/2/3 + a brief CPU load)
+   and diff to locate the RPM readout byte(s) and any writable fan-level/mode register.
+2. **Gated write test**: carefully write the candidate control register and confirm RPM responds
+   (raise-first, then step down, with abort) — the real M1 write gate.
+The IPF/`ipfsvc` ownership question (spec adversary) still applies once we can set a level.
