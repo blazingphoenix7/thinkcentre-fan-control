@@ -14,6 +14,10 @@ dist/
 *.msi
 publish/
 
+# Vendored tools + scratch (re-fetchable; not source)
+tools/
+work/
+
 # OS cruft
 Thumbs.db
 desktop.ini
