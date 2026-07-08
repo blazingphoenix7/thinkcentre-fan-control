@@ -73,3 +73,23 @@ the physical EC and bypass the virtualized ACPI one. Signed driver, no WinRing0.
 2. **Gated write test**: carefully write the candidate control register and confirm RPM responds
    (raise-first, then step down, with abort) — the real M1 write gate.
 The IPF/`ipfsvc` ownership question (spec adversary) still applies once we can set a level.
+
+## EC-diff result (2026-07-08): RPM + temps found; control register NOT yet isolated
+Captured EC across SmartFanMode 1/2/3 + a 15s CPU load, diffed.
+- **Fan tachometer = `0x00:0x01`, 16-bit big-endian** (`0x00`=high byte). Idle ~937–1083,
+  ~1721 under load, ~1795 while still hot. Consistent across two independent runs. This is our
+  live RPM readout.
+- **Temperature block ≈ `0x21`–`0x2F`**: values 45–98 °C, several rising with CPU load
+  (`0x23` 58→82, `0x26` 81→98, `0x2A` 61→96, `0x2F` 58→77).
+- **No writable fan-level/mode register was isolated.** SmartFanMode changes (1/2/3) barely
+  moved the idle fan, so no byte cleanly tracked *mode*; and under load, duty (set by IPF) is
+  indistinguishable from temperature in a passive read. `GetFanSpeed` (GameZone WMI) stayed 0
+  throughout (stubbed) — but the EC tach works, so we don't need it.
+
+### Consequence
+- **Monitoring (read) is proven:** real RPM + temps directly from the EC.
+- **Control (write) is unconfirmed:** the writable register was not identified passively, and may
+  live inside the opaque `FNSL` method (outside 0x00–0xFF EC RAM). Confirming control requires a
+  **bounded write test** — the first action that writes an unknown hardware register (volatile,
+  reboot-reversible, but the first with any risk). Optionally preceded by a safe finer-grained
+  spin-down/time-series read diff to better isolate a candidate before writing.
