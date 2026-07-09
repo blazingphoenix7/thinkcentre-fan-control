@@ -233,3 +233,40 @@ permanent damage there or on any user's system. Why each thing we touch is rever
   validate the tach and mapping.
 - **Project:** discoverable, well-documented, and credibly the first working fan-control tool for
   ThinkCentre desktops.
+
+---
+
+## ADDENDUM (2026-07-08) — architecture revised after the M0/M1 spike
+
+The spike (full record: `docs/research/ec-decode-m70t.md`) overturned the original control mechanism.
+This addendum supersedes §4/§5.2 where they conflict.
+
+**What the spike proved on the reference M70t:**
+- `FNSL` is an ACPI **method** (not a writable EC byte); the ACPI EC is virtualized/stubbed.
+- A **physical EC** answers at ports 0x62/0x66 (via PawnIO `LpcACPIEC`) and yields **live fan RPM
+  (`0x00:0x01`, big-endian) + a temperature block (`0x21`–`0x2F`)** — data Vantage shows as 0.
+- The fan PWM control is **not** in the reachable 256-byte EC RAM (load-correlated bytes are all
+  read-only sensors). Direct-EC write control (original plan) is **dead**.
+- Coarse control via Lenovo WMI `SetSmartFanMode` (quiet/balanced/performance) **works**.
+
+**Chosen path (owner decision):** fine-grain 0–100% control via **evaluating the ACPI `_FSL`
+method** with a custom **KMDF filter driver** (`IOCTL_ACPI_EVAL_METHOD`) bound to the fan
+participant device, with `ipfsvc`/IPF quieted while we drive. Rationale: firmware-sanctioned,
+portable, and safe across machines — the correct foundation for a *shareable* slider (blind EC
+register-writing was rejected as unsafe for other users' hardware).
+
+**Revised layered architecture:**
+```
+Tray UI (.NET 8 WinForms) — RPM/temp readout, mode presets, fine slider
+      │  reads: PawnIO LpcACPIEC (RPM 0x00:0x01 + temps) — PROVEN
+      │  coarse: Lenovo WMI SetSmartFanMode — PROVEN
+      └  fine:  our KMDF driver -> IOCTL_ACPI_EVAL_METHOD "_FSL"(0..100) — TO BUILD
+```
+
+**Build sequencing:**
+1. **App foundation (safe, shippable, needed regardless):** .NET tray app = EC monitoring (proven)
+   + coarse WMI modes (proven). Delivers the no-BIOS noise control that was the original need.
+2. **Fine-grain slider (R&D, gated):** the `_FSL` KMDF filter driver. Constraints to accept:
+   test-signing mode (Secure Boot OFF) for dev, unsigned-driver installs + reboots + BSOD risk,
+   attestation signing for public distribution, and quieting IPF. Feasibility is not guaranteed
+   (attaching to the IPF-owned device + evaluating `_FSL` + beating IPF must be proven).
