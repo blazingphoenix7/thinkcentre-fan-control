@@ -11,6 +11,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{E2B2D69B
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tcfc.Tests", "tests\Tcfc.Tests\Tcfc.Tests.csproj", "{179CDD3A-384E-4480-BC0C-061E5BD04F1E}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tcfc.Cli", "src\Tcfc.Cli\Tcfc.Cli.csproj", "{655D0297-AE06-4E33-B097-C28AB232035B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -28,9 +30,14 @@ Global
 		{179CDD3A-384E-4480-BC0C-061E5BD04F1E}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{179CDD3A-384E-4480-BC0C-061E5BD04F1E}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{179CDD3A-384E-4480-BC0C-061E5BD04F1E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{655D0297-AE06-4E33-B097-C28AB232035B}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{655D0297-AE06-4E33-B097-C28AB232035B}.Debug|Any CPU.Build.0 = Debug|x64
+		{655D0297-AE06-4E33-B097-C28AB232035B}.Release|Any CPU.ActiveCfg = Release|x64
+		{655D0297-AE06-4E33-B097-C28AB232035B}.Release|Any CPU.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{DC1EFDDB-A269-4F7D-81EE-961278C76699} = {9C147FA4-F2B0-4993-9714-9126255E7FFA}
 		{179CDD3A-384E-4480-BC0C-061E5BD04F1E} = {E2B2D69B-F3F0-4FF6-B7BD-6FE92AF3FCC1}
+		{655D0297-AE06-4E33-B097-C28AB232035B} = {9C147FA4-F2B0-4993-9714-9126255E7FFA}
 	EndGlobalSection
 EndGlobal
