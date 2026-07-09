@@ -102,3 +102,24 @@ curve: **1038 idle → 2789 peak → 1043**. Bytes correlating with RPM are the 
 the firmware fan curve). Isolating/confirming a writable control register now requires a bounded
 write test. Best write candidates, in order: `0x26` (value range too high for a plain °C sensor),
 `0x2A` (behavioral outlier), then `0x2F`/`0x23`. Fan tach `0x00:0x01` is the write-test feedback.
+
+## Bounded write test (2026-07-08): candidates are read-only; EC-write control likely DEAD
+Wrote each candidate to its observed load-peak value at idle (read → write → read-back → watch
+RPM → restore; all originals restored). **All four did not stick** (read-back = original) and RPM
+did not move: `0x23`, `0x26`, `0x2A`, `0x2F` are **read-only sensor registers**.
+
+### Conclusion on Path (B)
+Very likely **not viable**. Decisive reasoning: when IPF ramped the fan under load, the only EC
+bytes that changed were the tach (`0x00:0x01`) and read-only temperature sensors — **no writable
+duty byte appeared**. So the fan PWM control is not in the 256-byte ACPI-EC RAM we can reach; it
+lives inside the opaque `FNSL` method / a hardware register. Caveats (small, unpursued): a hidden
+"manual-mode enable + duty" register pair that stays constant in auto mode wouldn't show in a diff
+and could only be found by risky blind write-probing or EC-specific docs we don't have; extended
+(banked) EC space >0xFF is also unreached.
+
+### Net capability proven on this machine
+- **READ (monitoring): works.** Live fan RPM (`0x00:0x01`) + full temperature block from the EC —
+  data even Lenovo's own tools report as 0 on this desktop.
+- **WRITE (fine-grain control): not achieved** via direct EC. Remaining fine-grain path is (A)
+  ACPI `_FSL` method evaluation (custom signed driver + must quiet IPF) — a large lift.
+- **Coarse control: works** via Lenovo WMI `SetSmartFanMode` (quiet/balanced/performance).
