@@ -93,3 +93,12 @@ Captured EC across SmartFanMode 1/2/3 + a 15s CPU load, diffed.
   **bounded write test** — the first action that writes an unknown hardware register (volatile,
   reboot-reversible, but the first with any risk). Optionally preceded by a safe finer-grained
   spin-down/time-series read diff to better isolate a candidate before writing.
+
+## Cooldown time-series (2026-07-08): RPM confirmed; control still not separable passively
+20s CPU load then EC sampled every 2s through spin-down. RPM (`0x00:0x01` be) traced a clean
+curve: **1038 idle → 2789 peak → 1043**. Bytes correlating with RPM are the temperature block:
+`0x26` (r=0.92, ran 82→111), `0x2F` (0.90), `0x23` (0.87), `0x2A` (0.58, fast early drop).
+**Conclusion:** passive reads cannot separate fan *duty* from *temperature* (they are coupled by
+the firmware fan curve). Isolating/confirming a writable control register now requires a bounded
+write test. Best write candidates, in order: `0x26` (value range too high for a plain °C sensor),
+`0x2A` (behavioral outlier), then `0x2F`/`0x23`. Fan tach `0x00:0x01` is the write-test feedback.
