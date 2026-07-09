@@ -1,11 +1,12 @@
 using System.Management;
 using System.Runtime.Versioning;
 
-namespace Tcfc.Cli;
+namespace Tcfc.Core;
 
 /// <summary>
 /// Board identity, used to gate fan-mode writes to the verified model
-/// (see <see cref="Tcfc.Core.MachineGuard.IsSupportedBoard"/>).
+/// (see <see cref="MachineGuard.IsSupportedBoard"/>). Shared by the CLI and
+/// the tray app.
 /// </summary>
 public static class Board
 {
