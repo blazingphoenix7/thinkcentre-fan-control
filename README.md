@@ -1,145 +1,173 @@
-# ThinkCentre Fan Control
+<div align="center">
 
-A lightweight, open-source system-tray fan and thermal utility for Lenovo
-ThinkCentre / ThinkStation **desktops**.
+# 🌀 ThinkCentre Fan Control
 
-These machines report fan speed as 0 through every standard interface, so
-mainstream monitoring tools — and Lenovo's own software — show nothing. This
-tool reads the fan tach directly from the embedded controller and puts the
-**actual fan RPM** in your tray, next to one-click firmware fan modes
-(quiet / balanced / performance).
+**Your Lenovo ThinkCentre desktop tells every tool on the planet its fan spins at `0` RPM.**
+### It's lying. This reads the real number — and lets you shift gears.
 
-![ThinkCentre Fan Control — live fan RPM, hottest sensor, and firmware fan modes](docs/screenshots/monitor.png)
+[![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6?style=flat-square)](LICENSE)
+[![Platform: Windows 10/11](https://img.shields.io/badge/Windows-10_|_11-0078D6?style=flat-square&logo=windows&logoColor=white)](#install)
+[![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)](#build-from-source)
+[![Latest release](https://img.shields.io/github/v/release/blazingphoenix7/thinkcentre-fan-control?style=flat-square&color=14b8a6)](../../releases/latest)
+
+A featherweight, open-source system-tray utility that surfaces the **real fan RPM** of Lenovo
+**ThinkCentre / ThinkStation desktops** — pulled straight off the embedded controller — with
+one-click firmware fan modes right beside it.
 
 ![Live fan RPM climbing under load, read straight from the embedded controller](docs/screenshots/demo.gif)
 
-## What it does
+</div>
 
-- **Live fan RPM** in the tray icon tooltip and menu, read once per second
-  from the EC tach registers.
-- **Temperature monitoring**: the tray shows the hottest plausible EC sensor
-  (labelled exactly that — "hottest sensor" — because the sensor-to-component
-  mapping is unverified; see
-  [docs/research/temp-labeling.md](docs/research/temp-labeling.md)). The CLI's
-  `monitor` command prints the whole raw 15-byte EC temperature block.
-- **Fan mode presets**: quiet / balanced / performance via the firmware's own
-  WMI interface — the same mechanism the vendor software uses, so the change
-  is applied and regulated by the firmware itself.
-- **Start with Windows** toggle, and a CLI (`Tcfc.Cli`) for scripted use.
+---
 
-## What it deliberately does not do
+## Why it exists
 
-There is **no fine-grained RPM slider**: on these desktops the ACPI EC is
-virtualized and the physical EC exposes no writable fan register (write-tested),
-leaving 0–100% fan levels reachable only through an opaque ACPI method inside
-runtime-loaded firmware tables — so safe fine control from Windows isn't
-possible. The full reverse-engineering writeup is in
-[docs/specs/2026-07-08-thinkcentre-fan-control-design.md](docs/specs/2026-07-08-thinkcentre-fan-control-design.md)
-and [docs/research/ec-decode-m70t.md](docs/research/ec-decode-m70t.md).
+Open Task Manager, HWiNFO, LibreHardwareMonitor, even Lenovo's own Vantage, and ask your
+ThinkCentre desktop how fast its fan is spinning. Every one of them answers the same thing:
 
-EC access is **read-only by construction**: the EC I/O layer physically has no
-RAM-write path, and fan-mode changes go through the firmware's supported WMI
-call instead.
+> **`0` RPM.**
 
-## Installation
+The fan is *right there*, audibly spinning. The reading is fake — the firmware stubs out the
+sensor the OS gets to see. The real number is hiding one layer down, on a **physical embedded
+controller behind the virtualized one**. This tool goes and gets it, and drops it in your tray.
 
-**Before you start, you need:**
-- A **Windows 10 / 11** desktop — ideally a **Lenovo ThinkCentre M70t Gen 6**, the verified model (other ThinkCentre / ThinkStation desktops: see [Supported hardware](#supported-hardware)).
-- **Administrator** rights on the machine.
+<div align="center">
 
-### Step 1 — Install the PawnIO driver
+![The tray readout: live RPM, hottest sensor, and firmware fan modes](docs/screenshots/monitor.png)
 
-The app reads the embedded controller directly, which needs a ring-0 driver. It uses **[PawnIO](https://pawnio.eu/)** — a small, **code-signed** driver (the same one [FanControl](https://github.com/Rem0o/FanControl.Releases) and LibreHardwareMonitor use), *not* the old antivirus-flagged WinRing0.
+</div>
 
-1. Download the installer from **[pawnio.eu](https://pawnio.eu/)**.
-2. Run it and click through — accept the UAC prompt (it installs a signed kernel driver and a background service).
+## What you get
 
-### Step 2 — Download ThinkCentre Fan Control
+- 🌀 &nbsp;**Live fan RPM in your tray** — the number *nothing else on the machine will show you*, refreshed every second straight from the EC tach register.
+- 🌡️ &nbsp;**Temperature readout** — the hottest live EC sensor, labelled honestly as exactly that (the per-component mapping is unverified, so it never pretends to be "CPU").
+- 🎛️ &nbsp;**One-click fan modes** — Quiet / Balanced / Performance, driven through the firmware's *own* interface (the same one Vantage uses), so the curve stays firmware-regulated and safe.
+- 🪶 &nbsp;**Tiny, quiet, honest** — a tray app: no telemetry, no account, ~zero idle cost. MIT-licensed, and it touches the hardware **read-only by construction**.
 
-1. Grab the latest **[release ZIP](../../releases/latest)**.
-2. Unzip it anywhere (e.g. `C:\Tools\ThinkCentreFanControl`). The signed `LpcACPIEC.bin` EC module is **already bundled in the ZIP** — nothing else to download. Keep the files together; don't move `Tcfc.Tray.exe` out on its own or it won't find the module.
+## Honest scope
 
-### Step 3 — Run it
+> **There is no manual "set it to 1,400 RPM" slider — and this README won't pretend there is.**
+>
+> On these desktops the writable fan knob lives inside an opaque, runtime-loaded ACPI method with
+> no reachable register. I write-tested the EC directly; it genuinely isn't there. So fan control
+> here is **presets, not a dial.** But what *is* here — live RPM plus firmware modes — is real,
+> hardware-verified, and already more than anything else on the platform gives you. The full
+> autopsy, dead ends included, is in [How it works](#how-it-works).
 
-Right-click **`Tcfc.Tray.exe`** → **Run as administrator**. (A normal double-click also works — it requests elevation and shows a UAC prompt.)
+## Install
 
-> **First-run SmartScreen note:** the release exe isn't code-signed, so Windows may pop *"Windows protected your PC."* Click **More info → Run anyway**. It's fully open source — read every line here, or [build it yourself](#build-from-source).
+**You'll need:** Windows 10/11, **Administrator** rights, and ideally a **ThinkCentre M70t Gen 6**
+(the verified model — [other boards here](#supported-hardware)).
 
-A small **fan icon** appears in your system tray (it may be tucked under the **`^`** "show hidden icons" arrow). That's it — you're running.
+**1. Install the PawnIO driver.**
+Reading the EC needs a ring-0 driver, so the app uses **[PawnIO](https://pawnio.eu/)** — a small,
+**code-signed** driver (the same one [FanControl](https://github.com/Rem0o/FanControl.Releases)
+and LibreHardwareMonitor use; *not* the antivirus-flagged WinRing0). Download the installer from
+**[pawnio.eu](https://pawnio.eu/)**, run it, accept the UAC prompt.
 
-## Usage
+**2. Download the app.**
+Grab the latest **[release ZIP](../../releases/latest)** and unzip it anywhere. The signed
+`LpcACPIEC.bin` EC module is **already bundled** — keep the files together (don't move the exe out
+on its own, or it won't find the module).
 
-- **Hover** the tray icon → the tooltip shows your live **fan RPM**.
-- **Right-click** the icon for the menu:
-  - **Header line:** `RPM <n>  |  hottest sensor <n> °C`, refreshing every second. ("Hottest sensor" is deliberately vague — see [What it does](#what-it-does).)
-  - **Fan mode → Quiet / Balanced / Performance** — click one to switch; a ✓ marks the active mode. *(Enabled only on the verified board — see [Supported hardware](#supported-hardware).)*
-  - **Start with Windows** — launches it at logon (as an elevated scheduled task, so no UAC prompt each boot).
+**3. Run it.**
+Right-click **`Tcfc.Tray.exe`** → **Run as administrator** (a plain double-click works too — it
+requests elevation). A little fan icon lands in your tray, maybe under the **`^`** overflow arrow.
+Done.
+
+> 💡 &nbsp;**First run:** the exe isn't code-signed, so SmartScreen may say *"Windows protected
+> your PC."* Click **More info → Run anyway** — it's fully open source, so read it or
+> [build it yourself](#build-from-source).
+
+## Use it
+
+- **Hover** the tray icon → tooltip shows your live **fan RPM**.
+- **Right-click** it for the menu:
+  - **Header** — `RPM <n>  |  hottest sensor <n> °C`, live every second.
+  - **Fan mode → Quiet / Balanced / Performance** — click to switch; a ✓ marks the active one.
+  - **Start with Windows** — launches at logon via an elevated scheduled task (no UAC nag each boot).
   - **Exit.**
 
-**What the fan modes do:** they select the firmware's own thermal profile — the exact control Lenovo Vantage exposes — so the fan curve stays applied and regulated by the firmware. *Quiet* keeps it calmer, *Performance* lets it ramp sooner. They are presets, **not** a manual RPM slider (see [What it deliberately does not do](#what-it-deliberately-does-not-do)).
+The modes select the firmware's own thermal profile — *Quiet* keeps it calmer, *Performance* lets
+it ramp sooner. Presets, firmware-regulated, never a raw override.
 
 ## Supported hardware
 
 Everything is **verified on a ThinkCentre M70t Gen 6** (baseboard product `3376`).
 
-- **On the M70t Gen 6:** RPM and temperature readings are correct, and fan-mode control is enabled.
-- **On other ThinkCentre / ThinkStation desktops:** fan-mode control is **disabled by design** — the app refuses to write firmware modes on an unverified board (the menu shows *"monitoring only"*). And because the readings use the M70t's EC register layout, on a different board **the RPM/temperature numbers may be wrong or meaningless** — don't trust them until that board is verified.
+| Board | Monitoring | Fan modes |
+|---|---|---|
+| **ThinkCentre M70t Gen 6** (`3376`) | ✅ Correct | ✅ Enabled |
+| Other ThinkCentre / ThinkStation desktops | ⚠️ Readings use the M70t layout — **may be wrong** | 🔒 Disabled (won't write an unverified board) |
 
-Want it working on your model? The EC layout (which registers hold the tach and temperatures) has to be checked per board — [open an issue](../../issues) with your model name and baseboard product and we can figure it out.
+Want your model supported? The EC register layout has to be mapped per board.
+**[Open an issue](../../issues)** with your model name + baseboard product and let's work it out.
 
-## Uninstall
+## How it works
 
-Tray → **Exit** (untick **Start with Windows** first if you enabled it), then delete the unzipped folder. To remove the driver as well, uninstall **PawnIO** from *Settings → Apps → Installed apps*.
+The stock ACPI/WMI surface is a decoy. The embedded controller Windows sees is a **stub** — `_STA`
+returns zero, every field reads zero, and the fan telemetry routes through firmware tables that
+aren't even statically present. *That's* the `0` everyone else reports.
+
+But a **real, physical EC** is answering on ports `0x62/0x66` behind that virtual one. Reading its
+RAM through the signed [PawnIO](https://pawnio.eu/) driver — and diffing it live while forcing the
+fan up and down under CPU load — pinned the **tach**: a 16-bit big-endian value at `0x00:0x01`,
+confirmed against a full load → spin-down curve. Temperatures sit at `0x21..0x2F`.
+
+Fan *modes* came almost free: a Lenovo WMI class (`SetSmartFanMode`) that the firmware honours,
+write-verified on the target board.
+
+The fine-grained slider? Chased hard, then honestly buried — the write path is an ACPI method
+(`_FSL → FNSL`) hidden in a runtime-loaded table, unreachable without a signed kernel driver *and*
+neutering Intel's thermal daemon. Not worth risking your hardware for. The whole trail, dead ends
+and all:
+
+<details>
+<summary><b>📖 The full reverse-engineering write-up</b></summary>
+
+- **[Design spec & decisions](docs/specs/2026-07-08-thinkcentre-fan-control-design.md)** — architecture, safety gates, the pivot.
+- **[EC decode](docs/research/ec-decode-m70t.md)** — the stubbed ACPI EC, the physical EC behind it, the tach hunt, and the write-test dead end that killed the slider.
+- **[Temperature labelling](docs/research/temp-labeling.md)** — why sensors read "hottest sensor," not "CPU."
+- **[On-hardware verification](docs/research/v1-cli-verify.md)** — RPM 932 idle → ~2,800 under load, matching the probe data.
+
+</details>
+
+## Build from source
+
+Needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+
+```bash
+dotnet build
+dotnet test tests/Tcfc.Tests
+```
+
+Run `src\Tcfc.Tray\bin\x64\Debug\net8.0-windows\Tcfc.Tray.exe` as Administrator. The build looks
+for `LpcACPIEC.bin` next to the exe, at the repo's `lib\pawnio\`, or in
+`C:\Program Files\PawnIO\modules\` — grab the signed `LpcACPIEC` module from the
+[PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases) if you don't have it.
+
+A scriptable console harness builds alongside the tray (not shipped in the release ZIP) —
+`Tcfc.Cli.exe`, run from an elevated terminal:
+
+```
+Tcfc.Cli monitor                            # live RPM + the full 15-byte EC temp block + mode
+Tcfc.Cli mode                               # show current + supported modes
+Tcfc.Cli mode quiet|balanced|performance    # set a mode (verified board only)
+```
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| **"EC not available"** on launch | You're not running as **Administrator**, **PawnIO isn't installed**, or `LpcACPIEC.bin` isn't beside the exe (it ships in the ZIP — keep the files together). |
-| Tray shows **`- RPM`** | A read timed out — usually another EC/fan/monitoring tool is holding the EC lock (close it), or you're not elevated. |
-| **Fan mode items greyed out** / "monitoring only" | Your board isn't the verified `3376`; control is gated for safety (see [Supported hardware](#supported-hardware)). |
-| **"Windows protected your PC"** | Unsigned exe → **More info → Run anyway**, or build from source. |
-
-## Build from source
-
-Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
-
-```
-dotnet build
-dotnet test tests/Tcfc.Tests
-```
-
-Run `src\Tcfc.Tray\bin\x64\Debug\net8.0-windows\Tcfc.Tray.exe` as Administrator. When building, the module is found next to the exe, at the repo's `lib\pawnio\LpcACPIEC.bin`, or at `C:\Program Files\PawnIO\modules\` — grab the signed `LpcACPIEC` module from the [PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases) if you don't already have it.
-
-A console harness for scripting/power use is built alongside the tray (not shipped in the release ZIP): `src\Tcfc.Cli\bin\x64\Debug\net8.0-windows\Tcfc.Cli.exe`, run from an elevated terminal:
-
-```
-Tcfc.Cli monitor                            # live RPM + the full 15-byte EC temp block + mode, until a key
-Tcfc.Cli mode                               # show current and supported modes
-Tcfc.Cli mode quiet|balanced|performance    # set a mode (verified board only)
-```
-
-## How it works / what was reverse-engineered
-
-The stock ACPI/WMI surface on this platform is a dead end: the ACPI embedded
-controller is a stub (`_STA` returns zero, every EC field reads zero) and fan
-telemetry routes through firmware tables that aren't statically present. What
-does work, and what this tool is built on:
-
-- A **real physical EC** answers on ports 0x62/0x66 behind the virtualized
-  ACPI layer. Reading its RAM via PawnIO's `LpcACPIEC` module and diffing
-  against load/fan changes located the fan tach (16-bit big-endian at
-  `0x00/0x01`, verified by tracking a full load/spin-down curve) and a
-  temperature block at `0x21..0x2F`
-  ([docs/research/ec-decode-m70t.md](docs/research/ec-decode-m70t.md),
-  [docs/research/temp-labeling.md](docs/research/temp-labeling.md)).
-- Coarse fan modes are exposed by the firmware through a WMI class in
-  `root\wmi` (`GetSmartFanMode` / `SetSmartFanMode`), write-verified on the
-  target board
-  ([docs/research/v1-cli-verify.md](docs/research/v1-cli-verify.md)).
-- Design decisions, safety gates and the full decode trail are in
-  [docs/specs/2026-07-08-thinkcentre-fan-control-design.md](docs/specs/2026-07-08-thinkcentre-fan-control-design.md).
+| **"EC not available"** on launch | Not running as **Administrator**, **PawnIO not installed**, or `LpcACPIEC.bin` isn't beside the exe (it ships in the ZIP — keep the files together). |
+| Tray shows **`- RPM`** | A read timed out — usually another EC/fan/monitoring tool holds the EC lock (close it), or you're not elevated. |
+| **Fan modes greyed out** ("monitoring only") | Your board isn't the verified `3376`; control is gated for safety ([see above](#supported-hardware)). |
+| **"Windows protected your PC"** | Unsigned exe → **More info → Run anyway**, or [build from source](#build-from-source). |
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+**MIT** — do whatever you like with it. See [LICENSE](LICENSE).
+
+<div align="center">
+<sub>Built for the ThinkCentre desktops nobody else bothered to reverse-engineer.</sub>
+</div>
