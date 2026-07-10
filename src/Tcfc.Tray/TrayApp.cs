@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using Tcfc.Core;
@@ -12,14 +11,11 @@ namespace Tcfc.Tray;
 /// </summary>
 internal sealed class TrayApp : ApplicationContext
 {
-    // A scheduled task, not an HKCU Run entry: the exe manifest requires
-    // elevation and a Run entry can't silently elevate at logon.
-    private const string AutostartTaskName = "ThinkCentreFanControl";
-
     // Shown in the tooltip and menu header. NotifyIcon.Text caps at 63 chars.
     private const string EcUnavailableText = "EC unavailable - run as admin / install PawnIO";
 
     private readonly EcReader? _ec;
+    private readonly CpuTemps? _cpu;
     private readonly Icon _fanIcon;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu;
@@ -27,6 +23,7 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem _header;
     private readonly ToolStripMenuItem[] _modeItems;
     private readonly ToolStripMenuItem _autostartItem;
+    private DashboardForm? _dashboard;
 
     public TrayApp()
     {
@@ -38,6 +35,17 @@ internal sealed class TrayApp : ApplicationContext
         catch (EcUnavailableException)
         {
             _ec = null;
+        }
+
+        // Same defensive story as the EC reader: no PawnIO/elevation just means
+        // the dashboard's per-core grid draws itself as unavailable.
+        try
+        {
+            _cpu = new CpuTemps();
+        }
+        catch (EcUnavailableException)
+        {
+            _cpu = null;
         }
 
         _header = new ToolStripMenuItem(_ec is null ? EcUnavailableText : "RPM -  |  hottest sensor - C")
@@ -71,10 +79,15 @@ internal sealed class TrayApp : ApplicationContext
         _autostartItem = new ToolStripMenuItem("Start with Windows");
         _autostartItem.Click += (_, _) => ToggleAutostart();
 
+        var openItem = new ToolStripMenuItem("Open");
+        openItem.Click += (_, _) => ShowDashboard();
+
         var exitItem = new ToolStripMenuItem("Exit");
         exitItem.Click += (_, _) => ExitApp();
 
         _menu = new ContextMenuStrip();
+        _menu.Items.Add(openItem);
+        _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_header);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(modeSection);
@@ -82,7 +95,7 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Items.Add(_autostartItem);
         _menu.Items.Add(exitItem);
         // Re-query the scheduled task on every open: it can change behind our back.
-        _menu.Opening += (_, _) => _autostartItem.Checked = IsAutostartEnabled();
+        _menu.Opening += (_, _) => _autostartItem.Checked = Autostart.IsEnabled();
 
         _fanIcon = CreateFanIcon();
         _notifyIcon = new NotifyIcon
@@ -92,6 +105,7 @@ internal sealed class TrayApp : ApplicationContext
             Text = _ec is null ? EcUnavailableText : "- RPM",
             Visible = true,
         };
+        _notifyIcon.DoubleClick += (_, _) => ShowDashboard();
 
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
         _timer.Tick += (_, _) => UpdateReadings();
@@ -179,52 +193,18 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
-    // Runs schtasks.exe hidden (no console window flash); returns its exit code.
-    private static int RunSchtasks(string arguments)
-    {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "schtasks.exe",
-            Arguments = arguments,
-            CreateNoWindow = true,
-            UseShellExecute = false,
-        };
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("schtasks.exe could not be started.");
-        process.WaitForExit();
-        return process.ExitCode;
-    }
-
-    private static bool IsAutostartEnabled()
-    {
-        try
-        {
-            return RunSchtasks($"/Query /TN \"{AutostartTaskName}\"") == 0;
-        }
-        catch
-        {
-            return false; // no task (or no schtasks) counts as "not enabled"
-        }
-    }
-
     private void ToggleAutostart()
     {
         try
         {
-            if (IsAutostartEnabled())
+            if (Autostart.IsEnabled())
             {
-                int exitCode = RunSchtasks($"/Delete /TN \"{AutostartTaskName}\" /F");
-                if (exitCode != 0)
-                    throw new InvalidOperationException($"schtasks /Delete failed (exit code {exitCode}).");
+                Autostart.Disable();
                 _autostartItem.Checked = false;
             }
             else
             {
-                string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
-                int exitCode = RunSchtasks(
-                    $"/Create /TN \"{AutostartTaskName}\" /TR \"\\\"{exePath}\\\"\" /SC ONLOGON /RL HIGHEST /F");
-                if (exitCode != 0)
-                    throw new InvalidOperationException($"schtasks /Create failed (exit code {exitCode}).");
+                Autostart.Enable();
                 _autostartItem.Checked = true;
             }
         }
@@ -232,6 +212,17 @@ internal sealed class TrayApp : ApplicationContext
         {
             _notifyIcon.ShowBalloonTip(3000, "Autostart not changed", ex.Message, ToolTipIcon.Error);
         }
+    }
+
+    // Lazily creates the one dashboard instance, then (re)shows it. Reused
+    // across opens so the RPM history chart keeps rolling in the background.
+    private void ShowDashboard()
+    {
+        _dashboard ??= new DashboardForm(_ec, _cpu);
+        if (!_dashboard.Visible)
+            _dashboard.Show();
+        _dashboard.Activate();
+        _dashboard.BringToFront();
     }
 
     private void ExitApp()
@@ -250,6 +241,8 @@ internal sealed class TrayApp : ApplicationContext
             _notifyIcon.Dispose();
             _menu.Dispose();
             _fanIcon.Dispose();
+            _dashboard?.Dispose(); // real close, bypassing its close-to-tray FormClosing guard
+            _cpu?.Dispose();
             _ec?.Dispose();
         }
         base.Dispose(disposing);
