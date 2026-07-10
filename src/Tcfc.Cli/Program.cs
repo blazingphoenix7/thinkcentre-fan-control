@@ -3,11 +3,7 @@ using Tcfc.Core;
 
 namespace Tcfc.Cli;
 
-/// <summary>
-/// v1 hardware-verification harness: live monitoring (EC reads via PawnIO)
-/// and board-gated fan-mode control (firmware WMI). Run from an elevated
-/// terminal; the manifest requests elevation when launched directly.
-/// </summary>
+/// <summary>Hardware harness: live EC monitoring and board-gated fan-mode control. Needs an elevated terminal.</summary>
 [SupportedOSPlatform("windows")]
 internal static class Program
 {
@@ -65,11 +61,6 @@ internal static class Program
             """);
     }
 
-    /// <summary>
-    /// Prints one refreshing status line roughly every second until a key is
-    /// pressed: fan RPM, the raw EC temperature block (0x21..0x2F, -1 marks a
-    /// timed-out offset), and the firmware fan mode.
-    /// </summary>
     private static int Monitor()
     {
         bool interactive = !Console.IsInputRedirected;
@@ -106,7 +97,7 @@ internal static class Program
                 Console.WriteLine(line);
             }
 
-            // Wait ~1 s until the next reading, reacting to a keypress fast.
+            // ~1 s between readings, sliced so a keypress registers fast
             for (int slice = 0; slice < 20; slice++)
             {
                 if (interactive && Console.KeyAvailable)
@@ -130,8 +121,7 @@ internal static class Program
 
     private static int SetMode(string modeArg)
     {
-        // Board gate first: firmware fan-mode writes happen only on the model
-        // this was verified on; everything else stays read-only.
+        // Never write firmware settings on a board this wasn't verified on.
         string? product = Board.Product();
         if (!MachineGuard.IsSupportedBoard(product))
         {

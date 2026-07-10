@@ -10,21 +10,15 @@ using Tcfc.Core;
 namespace Tcfc.Capture;
 
 /// <summary>
-/// Draws the README "fan monitor" card with GDI+: a large current-RPM figure,
-/// a line chart of recent RPM samples, the hottest-sensor temperature and the
-/// firmware fan-mode pills. Pure rendering — every displayed value is passed
-/// in by the caller straight from the hardware, and unavailable readings are
-/// shown as gaps/dashes, never invented.
+/// Draws the README monitor card with GDI+. Pure rendering: every value comes
+/// from the caller, and unavailable readings draw as dashes or chart gaps.
 /// </summary>
 public sealed class CardRenderer
 {
     public const int Width = 760;
     public const int Height = 420;
 
-    /// <summary>
-    /// Chart capacity in samples. The series is right-anchored: a shorter
-    /// history draws from the right edge, like a live ticker filling up.
-    /// </summary>
+    /// <summary>Chart capacity in samples. A shorter history draws right-anchored, like a ticker filling up.</summary>
     public const int HistorySlots = 60;
 
     // Dark slate palette with a single teal accent.
@@ -49,13 +43,7 @@ public sealed class CardRenderer
 
     private static readonly RectangleF ChartRect = new(320f, 88f, 396f, 240f);
 
-    /// <summary>
-    /// Renders one card. <paramref name="rpm"/> &lt; 0 and null
-    /// <paramref name="tempC"/>/<paramref name="mode"/> mean "reading
-    /// unavailable" and are drawn as dashes; negative samples in
-    /// <paramref name="history"/> become gaps in the chart line.
-    /// The caller owns (and disposes) the returned bitmap.
-    /// </summary>
+    /// <summary>rpm &lt; 0 / null tempC / null mode draw as dashes; negative history samples become chart gaps. Caller disposes the bitmap.</summary>
     public Bitmap Render(int rpm, int? tempC, FanMode? mode, IReadOnlyList<int> history)
     {
         var bmp = new Bitmap(Width, Height, PixelFormat.Format32bppArgb);
@@ -101,7 +89,7 @@ public sealed class CardRenderer
     private static void DrawRpmFigure(Graphics g, int rpm)
     {
         bool available = rpm >= 0;
-        string figure = available ? rpm.ToString(CultureInfo.InvariantCulture) : "—";
+        string figure = available ? rpm.ToString(CultureInfo.InvariantCulture) : "-";
 
         using var figureBrush = new SolidBrush(available ? Accent : TextMuted);
         using var unitBrush = new SolidBrush(TextMuted);
@@ -124,7 +112,7 @@ public sealed class CardRenderer
         string label = "hottest sensor";
         string value = tempC.HasValue
             ? tempC.Value.ToString(CultureInfo.InvariantCulture) + " °C"
-            : "—";
+            : "-";
 
         using var muted = new SolidBrush(TextMuted);
         using var primary = new SolidBrush(TextPrimary);
@@ -179,7 +167,7 @@ public sealed class CardRenderer
             }
         }
 
-        // Scale labels on the top and bottom grid lines.
+        // scale labels on the top and bottom grid lines
         if (hasData)
         {
             using var faint = new SolidBrush(TextFaint);

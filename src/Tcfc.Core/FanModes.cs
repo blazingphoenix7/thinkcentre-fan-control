@@ -4,24 +4,18 @@ using System.Runtime.Versioning;
 namespace Tcfc.Core;
 
 /// <summary>
-/// Reads and sets the firmware fan mode through the LENOVO_GAMEZONE_DATA WMI
-/// class in root\wmi — the same GetSmartFanMode/SetSmartFanMode calls the
-/// vendor's own utility makes.
+/// Firmware fan mode via the LENOVO_GAMEZONE_DATA WMI class in root\wmi - the
+/// same Get/SetSmartFanMode calls the vendor's own utility makes.
 /// </summary>
 public static class FanModes
 {
-    /// <summary>
-    /// Decodes a GetSupportThermalMode bitmask: mode m is supported when bit
-    /// (int)m of the mask is set (mask 14 = 0b1110 → Quiet, Balanced,
-    /// Performance). Pure logic; no WMI.
-    /// </summary>
+    /// <summary>Mode m is supported when bit (int)m of the mask is set (mask 14 = 0b1110 = all three).</summary>
     public static FanMode[] SupportedFromMask(int mask)
     {
         var all = new[] { FanMode.Quiet, FanMode.Balanced, FanMode.Performance };
         return all.Where(m => ((mask >> (int)m) & 1) == 1).ToArray();
     }
 
-    /// <summary>Reads the current fan mode (GetSmartFanMode).</summary>
     [SupportedOSPlatform("windows")]
     public static FanMode Get()
     {
@@ -30,11 +24,7 @@ public static class FanModes
         return (FanMode)Convert.ToUInt32(result["Data"]);
     }
 
-    /// <summary>
-    /// Sets the fan mode (SetSmartFanMode). Refuses on anything but the
-    /// verified board — callers gate first, but a firmware write must be
-    /// impossible to reach on unverified hardware even through a new caller.
-    /// </summary>
+    /// <summary>Sets the fan mode. Refuses off the verified board even if a caller forgot to gate.</summary>
     [SupportedOSPlatform("windows")]
     public static void Set(FanMode mode)
     {
@@ -47,7 +37,6 @@ public static class FanModes
         using var result = gameZone.InvokeMethod("SetSmartFanMode", inParams, null);
     }
 
-    /// <summary>Queries which modes the firmware supports (GetSupportThermalMode).</summary>
     [SupportedOSPlatform("windows")]
     public static FanMode[] Supported()
     {
@@ -56,10 +45,7 @@ public static class FanModes
         return SupportedFromMask((int)Convert.ToUInt32(result["Data"]));
     }
 
-    /// <summary>
-    /// Returns the single LENOVO_GAMEZONE_DATA instance from root\wmi.
-    /// Caller owns (and should dispose) the returned object.
-    /// </summary>
+    // Caller disposes the returned instance.
     [SupportedOSPlatform("windows")]
     private static ManagementObject GetGameZoneInstance()
     {

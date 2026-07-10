@@ -8,14 +8,10 @@ using System.Windows.Media.Imaging;
 namespace Tcfc.Capture;
 
 /// <summary>
-/// Writes an infinitely looping animated GIF from a list of frames.
-/// <see cref="GifBitmapEncoder"/> concatenates the images but emits no timing
-/// or loop metadata, so the byte stream is rewritten afterwards: a
-/// NETSCAPE2.0 application extension (loop count 0 = forever) is inserted
-/// right after the logical screen descriptor / global color table, and every
-/// image descriptor gets a Graphic Control Extension carrying the frame
-/// delay. The rewrite is a real block walk of the GIF grammar, not a byte
-/// pattern search, so local color tables and existing extensions survive.
+/// Writes a looping animated GIF. GifBitmapEncoder concatenates the frames but
+/// emits no timing or loop metadata, so the stream is rewritten afterwards:
+/// a NETSCAPE2.0 loop extension after the header and a Graphic Control
+/// Extension per frame for the delay.
 /// </summary>
 public static class AnimatedGif
 {
@@ -37,16 +33,12 @@ public static class AnimatedGif
             plain = buffer.ToArray();
         }
 
-        // GIF time unit is 1/100 s; browsers treat delays below 2 cs as 10 cs,
-        // so clamp to keep the declared timing honest.
+        // GIF time unit is 1/100 s; browsers treat delays below 2 cs as 10 cs.
         int delayCs = Math.Max(2, (int)Math.Round(delayMs / 10.0));
         File.WriteAllBytes(path, WithLoopAndDelays(plain, delayCs));
     }
 
-    /// <summary>
-    /// Round-trips a GDI+ bitmap into a WPF frame via an in-memory PNG —
-    /// lossless, and avoids interop HBITMAP ownership pitfalls.
-    /// </summary>
+    // GDI+ to WPF via an in-memory PNG: lossless, and no HBITMAP ownership mess.
     private static BitmapFrame ToBitmapFrame(Bitmap bitmap)
     {
         using var buffer = new MemoryStream();
@@ -57,12 +49,7 @@ public static class AnimatedGif
         return frame;
     }
 
-    /// <summary>
-    /// Walks the encoder's GIF stream block by block and rebuilds it with a
-    /// NETSCAPE2.0 loop extension plus a per-frame Graphic Control Extension
-    /// (delay in centiseconds, disposal "leave in place"). Existing GCEs are
-    /// patched rather than duplicated.
-    /// </summary>
+    // Walks the stream block by block; existing GCEs are patched, not duplicated.
     private static byte[] WithLoopAndDelays(byte[] src, int delayCs)
     {
         if (src.Length < 13 || src[0] != (byte)'G' || src[1] != (byte)'I' || src[2] != (byte)'F')
@@ -167,11 +154,8 @@ public static class AnimatedGif
         return output.ToArray();
     }
 
-    /// <summary>
-    /// Advances over a chain of data sub-blocks (length byte + payload,
-    /// terminated by a zero length byte) and returns the offset just past the
-    /// terminator.
-    /// </summary>
+    // Data sub-blocks are length byte + payload, 0 terminates; returns the
+    // offset just past the terminator.
     private static int SkipSubBlocks(byte[] src, int pos)
     {
         while (true)

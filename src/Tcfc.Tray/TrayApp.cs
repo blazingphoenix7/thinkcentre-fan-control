@@ -6,23 +6,17 @@ using Tcfc.Core;
 namespace Tcfc.Tray;
 
 /// <summary>
-/// The tray face of the tool: live fan RPM in the icon tooltip, a live
-/// "RPM | hottest sensor" header in the context menu, board-gated fan-mode
-/// presets, an autostart toggle, and exit.
-/// Fails toward loud-and-safe: when the EC driver is unavailable the app
-/// still runs (clearly labelled, mode changes disabled); on anything but the
-/// verified board the mode menu is replaced by an explanation and the app
-/// stays monitoring-only.
+/// Tray UI: live RPM tooltip and menu header, board-gated fan-mode presets,
+/// autostart toggle. Runs monitoring-only when the EC driver is unavailable
+/// or the board is not the verified one.
 /// </summary>
 internal sealed class TrayApp : ApplicationContext
 {
-    // Autostart is a Task Scheduler logon task, not an HKCU Run entry: the
-    // exe manifest requires elevation, and a Run entry cannot silently
-    // elevate at logon — a task with "run with highest privileges" can.
+    // A scheduled task, not an HKCU Run entry: the exe manifest requires
+    // elevation and a Run entry can't silently elevate at logon.
     private const string AutostartTaskName = "ThinkCentreFanControl";
 
-    // Shown in both the tooltip and the menu header while degraded. Keep it
-    // short: NotifyIcon.Text is hard-capped (63 chars classic).
+    // Shown in the tooltip and menu header. NotifyIcon.Text caps at 63 chars.
     private const string EcUnavailableText = "EC unavailable - run as admin / install PawnIO";
 
     private readonly EcReader? _ec;
@@ -36,8 +30,7 @@ internal sealed class TrayApp : ApplicationContext
 
     public TrayApp()
     {
-        // EC access is best effort: without PawnIO or elevation the tray
-        // still starts, it just says why there are no readings.
+        // Without PawnIO or elevation the tray still starts, just without readings.
         try
         {
             _ec = new EcReader();
@@ -52,9 +45,7 @@ internal sealed class TrayApp : ApplicationContext
             Enabled = false,
         };
 
-        // Fan-mode writes happen only on the verified board; anywhere else
-        // the menu says so and the app is monitoring-only (same gate as the
-        // CLI). A WMI hiccup reads as unsupported, i.e. fails toward safe.
+        // Same board gate as the CLI; a WMI hiccup counts as unsupported.
         ToolStripMenuItem modeSection;
         if (MachineGuard.IsSupportedBoard(TryReadBoardProduct()))
         {
@@ -111,11 +102,6 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
-    /// <summary>
-    /// One monitoring beat (UI thread; EC reads are fast and synchronous):
-    /// refreshes the tooltip RPM and the menu header line. A transient bad
-    /// read keeps the previous values and is retried on the next tick.
-    /// </summary>
     private void UpdateReadings()
     {
         if (_ec is null)
@@ -123,15 +109,12 @@ internal sealed class TrayApp : ApplicationContext
 
         try
         {
-            // -1 = no reading this beat (EC lock or handshake timeout);
-            // shown as "-", same as an unavailable temperature.
+            // -1 = no reading this tick (EC lock or handshake timeout)
             int rpm = _ec.Rpm();
             string rpmText = rpm < 0 ? "-" : rpm.ToString();
 
-            // "Hottest sensor", deliberately not "CPU"/"temp": the EC block's
-            // sensor-to-component mapping is unverified, and TempSummary
-            // filters bytes that cannot be plain temperatures (see
-            // docs/research/temp-labeling.md).
+            // "hottest sensor", not "CPU": the sensor-to-component mapping is
+            // unverified (docs/research/temp-labeling.md)
             int? hottest = TempSummary.Representative(_ec.Temps());
 
             _notifyIcon.Text = $"{rpmText} RPM";
@@ -139,14 +122,13 @@ internal sealed class TrayApp : ApplicationContext
         }
         catch
         {
-            // Keep the tray alive through a read hiccup; next tick retries.
+            // keep the tray alive; next tick retries
         }
     }
 
     private ToolStripMenuItem CreateModeItem(FanMode mode)
     {
-        // Mode items exist only on the verified board, and are additionally
-        // disabled while the EC is unavailable (degraded monitoring state).
+        // also disabled while the EC is unavailable (degraded state)
         var item = new ToolStripMenuItem(mode.ToString())
         {
             Tag = mode,
@@ -169,7 +151,6 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
-    /// <summary>Puts the check mark on the mode the firmware reports now.</summary>
     private void RefreshModeChecks()
     {
         FanMode? current;
@@ -198,10 +179,7 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
-    /// <summary>
-    /// Runs schtasks.exe hidden (no console window flash) and returns its
-    /// exit code — 0 means the query/create/delete succeeded.
-    /// </summary>
+    // Runs schtasks.exe hidden (no console window flash); returns its exit code.
     private static int RunSchtasks(string arguments)
     {
         var startInfo = new ProcessStartInfo
@@ -260,7 +238,7 @@ internal sealed class TrayApp : ApplicationContext
     {
         _timer.Stop();
         _notifyIcon.Visible = false; // drop the icon before the loop ends
-        Dispose();                   // EcReader, NotifyIcon, menu, icon
+        Dispose();
         Application.Exit();
     }
 
@@ -277,13 +255,9 @@ internal sealed class TrayApp : ApplicationContext
         base.Dispose(disposing);
     }
 
-    /// <summary>
-    /// Draws the tray icon at runtime (no image assets): a solid dark disc
-    /// with a light rim carrying a bold three-blade propeller. Three blades at
-    /// 120° cannot be mistaken for the four-arrow "move" cursor, the dark disc
-    /// keeps it visible on light taskbars and the light rim/blades on dark
-    /// ones, and the shapes are chunky enough to survive the 16x16 downscale.
-    /// </summary>
+    // Drawn at runtime, no image assets. Three blades so it can't be mistaken
+    // for the four-arrow move cursor; dark disc + light rim reads on both light
+    // and dark taskbars and survives the 16x16 downscale.
     private static Icon CreateFanIcon()
     {
         using var bitmap = new Bitmap(32, 32);
@@ -296,11 +270,11 @@ internal sealed class TrayApp : ApplicationContext
             using var lightFill = new SolidBrush(light);
             using var rim = new Pen(light, 2f);
 
-            // Badge: dark disc with a light rim just inside its edge.
+            // disc + rim
             g.FillEllipse(darkFill, 1f, 1f, 30f, 30f);
             g.DrawEllipse(rim, 2f, 2f, 28f, 28f);
 
-            // Three light blades at 120° radiating from the hub.
+            // three blades, 120 degrees apart
             g.TranslateTransform(16f, 16f);
             for (int i = 0; i < 3; i++)
             {
@@ -309,13 +283,12 @@ internal sealed class TrayApp : ApplicationContext
             }
             g.ResetTransform();
 
-            // Hub with a dark axle dot.
+            // hub + axle dot
             g.FillEllipse(lightFill, 12f, 12f, 8f, 8f);
             g.FillEllipse(darkFill, 14.5f, 14.5f, 3f, 3f);
         }
 
-        // GetHicon hands out an unmanaged handle; clone into a managed icon
-        // and release the handle so nothing leaks.
+        // GetHicon hands out an unmanaged handle; clone it and free the original.
         IntPtr hIcon = bitmap.GetHicon();
         try
         {

@@ -12,17 +12,10 @@ using Tcfc.Core;
 namespace Tcfc.Capture;
 
 /// <summary>
-/// Dev-only capture tool that renders README marketing assets from live
-/// hardware readings: a still monitor card (monitor.png) and an ~11 s
-/// animated capture (demo.gif) that ramps the fan by loading every core
-/// mid-recording. Every displayed number comes straight from the EC /
-/// firmware WMI at the moment of the frame — nothing is fabricated.
-/// Run from an elevated terminal on the verified machine; this project is
-/// not part of the shipped tray release.
-///
-/// The `slim` subcommand is different: it re-encodes an existing animated
-/// GIF smaller (fewer frames, smaller pixels) and touches no hardware, so it
-/// needs neither elevation nor the EC driver.
+/// Dev-only tool that renders the README assets from live readings: a still
+/// card (monitor.png) and an ~11 s gif that loads every core mid-recording so
+/// the fan ramps. Needs elevation + PawnIO. The slim subcommand just
+/// re-encodes an existing gif smaller and needs neither.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static class Program
@@ -39,8 +32,7 @@ internal static class Program
     private const int LoadFrames = 60;      // ~6 s of full-core load, then settle
     private const int ModeReadEvery = 10;   // WMI is slow; refresh the mode ~1/s
 
-    // slim mode: keep every 3rd frame, cap the width at 620 px and replay at
-    // 150 ms/frame — still smooth for a README, at a fraction of the bytes.
+    // slim: keep every 3rd frame, cap width at 620 px, replay at 150 ms/frame
     private const int SlimFrameStride = 3;
     private const int SlimMaxWidth = 620;
     private const int SlimDelayMs = 150;
@@ -57,7 +49,7 @@ internal static class Program
         catch (EcUnavailableException ex)
         {
             Console.Error.WriteLine(
-                $"EC not available: {ex.Message}. This tool needs Administrator and PawnIO — " +
+                $"EC not available: {ex.Message}. This tool needs Administrator and PawnIO; " +
                 "run it from an elevated terminal on the machine with the driver installed.");
             return 2;
         }
@@ -89,11 +81,7 @@ internal static class Program
         return 0;
     }
 
-    /// <summary>
-    /// Default output directory is docs/screenshots under the repo root,
-    /// found by walking up from the executable to the directory holding the
-    /// solution file; an explicit first argument overrides it.
-    /// </summary>
+    // docs/screenshots under the repo root by default; first arg overrides
     private static string ResolveOutputDirectory(string[] args)
     {
         if (args.Length > 0)
@@ -110,13 +98,6 @@ internal static class Program
             "pass an output directory as the first argument.");
     }
 
-    /// <summary>
-    /// `slim &lt;input.gif&gt; &lt;output.gif&gt;`: shrinks an animated GIF by
-    /// keeping every <see cref="SlimFrameStride"/>rd frame, downscaling to at
-    /// most <see cref="SlimMaxWidth"/> px wide and re-encoding at
-    /// <see cref="SlimDelayMs"/> ms/frame. Input and output may be the same
-    /// path; the result is then staged in a temp file and swapped in.
-    /// </summary>
     private static int Slim(string[] args)
     {
         if (args.Length != 3)
@@ -138,9 +119,8 @@ internal static class Program
         var frames = new List<Bitmap>();
         try
         {
-            // Image.FromFile keeps the file locked, so copy every kept frame
-            // out into standalone bitmaps and dispose the source before any
-            // writing happens (the output may be this same file).
+            // Image.FromFile keeps the file locked, so copy the kept frames out
+            // and dispose the source before writing (output may be this file).
             using (Image source = Image.FromFile(inputPath))
             {
                 var time = new FrameDimension(source.FrameDimensionsList[0]);
@@ -152,8 +132,8 @@ internal static class Program
                 }
             }
 
-            // For an in-place run, encode next to the target and swap it in so
-            // a failed encode never destroys the original.
+            // In-place: stage next to the target and swap, so a failed encode
+            // never destroys the original.
             bool inPlace = string.Equals(inputPath, outputPath, StringComparison.OrdinalIgnoreCase);
             string stagePath = inPlace ? outputPath + ".tmp" : outputPath;
             try
@@ -181,11 +161,6 @@ internal static class Program
         return 0;
     }
 
-    /// <summary>
-    /// Copies the image's active frame into a new 24-bpp bitmap no wider than
-    /// <paramref name="maxWidth"/>, preserving the aspect ratio. The caller
-    /// owns the returned bitmap.
-    /// </summary>
     private static Bitmap Downscale(Image source, int maxWidth)
     {
         int width = source.Width;
@@ -204,10 +179,6 @@ internal static class Program
         return scaled;
     }
 
-    /// <summary>
-    /// Renders the still card from the current readings, seeding the chart
-    /// with a short run of real RPM samples first.
-    /// </summary>
     private static void CaptureStill(EcReader ec, CardRenderer renderer, string path)
     {
         Console.WriteLine($"still: sampling rpm for ~{SeedReads * SeedIntervalMs / 1000.0:0.#} s...");
@@ -228,11 +199,6 @@ internal static class Program
         card.Save(path, ImageFormat.Png);
     }
 
-    /// <summary>
-    /// Captures ~11 s at ~10 fps: a short idle lead-in, ~6 s with every
-    /// logical CPU loaded so the firmware ramps the fan, then the settle.
-    /// Each frame is rendered from the readings taken at that instant.
-    /// </summary>
     private static (int Min, int Max) CaptureGif(EcReader ec, CardRenderer renderer, string path)
     {
         Console.WriteLine($"gif: capturing {FrameCount} frames (~{FrameCount * FrameDelayMs / 1000} s), " +
@@ -275,8 +241,8 @@ internal static class Program
 
                 frames.Add(renderer.Render(rpm, temp, mode, history));
 
-                // Pace frames against the wall clock so capture time matches
-                // the GIF's declared timing.
+                // pace against the wall clock so capture time matches the
+                // gif's declared timing
                 long nextDue = (long)(i + 1) * FrameDelayMs;
                 int wait = (int)(nextDue - clock.ElapsedMilliseconds);
                 if (wait > 0)
@@ -295,7 +261,6 @@ internal static class Program
         return (min, max);
     }
 
-    /// <summary>Firmware mode via WMI; null when the interface is unavailable.</summary>
     private static FanMode? TryReadMode()
     {
         try
@@ -308,11 +273,8 @@ internal static class Program
         }
     }
 
-    /// <summary>
-    /// Saturates every logical CPU with a tight math loop so the firmware
-    /// ramps the fan during the capture. BelowNormal priority keeps the
-    /// capture loop itself responsive while still consuming all idle cycles.
-    /// </summary>
+    // Loads every logical CPU so the firmware ramps the fan. BelowNormal
+    // priority keeps the capture loop itself responsive.
     private sealed class CpuLoad
     {
         private Thread[]? _threads;

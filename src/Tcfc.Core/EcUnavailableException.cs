@@ -1,10 +1,6 @@
 namespace Tcfc.Core;
 
-/// <summary>
-/// Thrown when the PawnIO driver, its EC port-I/O module, or the embedded
-/// controller itself is not usable on this machine (driver not installed,
-/// process not elevated, module blob missing, or a PawnIO call failed).
-/// </summary>
+/// <summary>PawnIO or the EC is not usable here: driver not installed, not elevated, module blob missing, or a call failed.</summary>
 public sealed class EcUnavailableException : Exception
 {
     public EcUnavailableException(string message)

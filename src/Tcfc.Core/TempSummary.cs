@@ -1,26 +1,17 @@
 namespace Tcfc.Core;
 
 /// <summary>
-/// Pure logic that reduces the raw EC temperature block to one honest display
-/// value. The sensor-to-component mapping of this block is unverified, so no
-/// value is ever labelled "CPU" or similar — the app only ever claims
-/// "hottest sensor". See <c>docs/research/temp-labeling.md</c>.
+/// Reduces the raw EC temp block to one display value. The sensor-to-component
+/// mapping is unverified, so we only ever claim "hottest sensor", never "CPU"
+/// (see docs/research/temp-labeling.md).
 /// </summary>
 public static class TempSummary
 {
-    /// <summary>
-    /// A byte that cannot plausibly be a Celsius reading of a machine that is
-    /// still running. Offset 0x26 was measured at 111 under load — real, and
-    /// load-correlated, but not a plain degrees-C temperature.
-    /// </summary>
+    // Offset 0x26 reads 111 under load - real and load-correlated, but not a
+    // plain degrees-C temperature. Anything above this is filtered out.
     private const int MaxPlausibleC = 100;
 
-    /// <summary>
-    /// The hottest plausible sensor value: the maximum reading in
-    /// (0, 100] °C. This skips 0 (unused sensor slots), -1 (timed-out EC
-    /// reads), and implausibly high bytes that are not plain temperatures.
-    /// Returns null when nothing qualifies.
-    /// </summary>
+    /// <summary>Hottest reading in (0, 100]; skips 0 (unused slots) and -1 (timed-out reads). Null when nothing qualifies.</summary>
     public static int? Representative(int[] temps)
     {
         int? hottest = null;
