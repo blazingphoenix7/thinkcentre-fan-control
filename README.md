@@ -9,7 +9,8 @@ tool reads the fan tach directly from the embedded controller and puts the
 **actual fan RPM** in your tray, next to one-click firmware fan modes
 (quiet / balanced / performance).
 
-<!-- screenshot: tray menu showing live RPM + hottest sensor + fan modes -->
+![Tray showing live fan RPM](docs/screenshots/tray-tooltip.png)
+![Tray menu with live RPM, hottest sensor, and fan-mode presets](docs/screenshots/tray-menu.png)
 
 ## What it does
 
@@ -60,7 +61,14 @@ Verification reports from other ThinkCentre / ThinkStation models are very
 welcome — the EC layout of each board needs to be checked before its mode
 control can be enabled.
 
-## Build and run
+## Download & run
+
+Grab the latest **[release zip](../../releases)**, unzip it anywhere, and run
+`Tcfc.Tray.exe` **as Administrator**. The signed `LpcACPIEC.bin` module is
+bundled in the zip; you still need the [PawnIO](https://pawnio.eu/) driver
+installed (see Requirements above).
+
+## Build from source
 
 ```
 dotnet build
@@ -91,3 +99,7 @@ does work, and what this tool is built on:
   ([docs/research/v1-cli-verify.md](docs/research/v1-cli-verify.md)).
 - Design decisions, safety gates and the full decode trail are in
   [docs/specs/2026-07-08-thinkcentre-fan-control-design.md](docs/specs/2026-07-08-thinkcentre-fan-control-design.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

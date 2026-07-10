@@ -19,4 +19,13 @@
     <ProjectReference Include="..\Tcfc.Core\Tcfc.Core.csproj" />
   </ItemGroup>
 
+  <!-- Bundle the signed PawnIO EC module next to the exe when it is present (release
+       builds and this repo's dev tree). It is git-ignored, so a fresh clone won't have
+       it and this is skipped; get it from the PawnIO.Modules releases (see README). -->
+  <ItemGroup Condition="Exists('..\..\lib\pawnio\LpcACPIEC.bin')">
+    <None Include="..\..\lib\pawnio\LpcACPIEC.bin" Link="LpcACPIEC.bin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

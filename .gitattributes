@@ -1,0 +1,7 @@
+# Normalize line endings on commit; check out native.
+* text=auto
+
+# Binary assets — never touch line endings.
+*.png binary
+*.bin binary
+*.ico binary
