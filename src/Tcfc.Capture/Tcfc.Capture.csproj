@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- GDI+ (card rendering) comes from the WinForms reference set, the GIF
+         encoder (System.Windows.Media.Imaging.GifBitmapEncoder) from WPF. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF>true</UseWPF>
+    <!-- Implicit usings stay off: with WinForms + WPF referenced together the
+         SDK's implicit global usings import both System.Drawing and
+         System.Windows.Media, making Color/Pen/Brushes/Rectangle ambiguous.
+         Each file states its own usings instead. -->
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Elevation: EC access through PawnIO requires an admin token. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- PawnIOLib.dll is 64-bit only; the process bitness must match. -->
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Tcfc.Core\Tcfc.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Dev tool only: this project produces README assets (docs/screenshots)
+       and is never part of the shipped tray release. Nothing references it. -->
+
+  <!-- Copy the signed PawnIO EC module next to the exe when present, same as
+       the tray/CLI projects. Git-ignored; EcReader also falls back to the
+       repo dev path when the copy is absent. -->
+  <ItemGroup Condition="Exists('..\..\lib\pawnio\LpcACPIEC.bin')">
+    <None Include="..\..\lib\pawnio\LpcACPIEC.bin" Link="LpcACPIEC.bin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
