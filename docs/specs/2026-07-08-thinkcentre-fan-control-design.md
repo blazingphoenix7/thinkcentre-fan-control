@@ -197,8 +197,7 @@ permanent damage there or on any user's system. Why each thing we touch is rever
 
 ## 7. Project specifics
 
-- **Location:** `C:\Users\AaryanMehta\Downloads\thinkcentre-fan-control` — own standalone git
-  repo, zero contact with any other project.
+- **Location:** a standalone git repo, separate from any other project.
 - **Stack:** .NET 8 + WinForms; PawnIO SDK; PawnIO-based LibreHardwareMonitorLib for sensors.
 - **Distribution:** signed installer + portable zip; GitHub releases; MIT (or similar) license.
 - **App display name:** "ThinkCentre Fan Control".

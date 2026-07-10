@@ -52,7 +52,7 @@ installed) for EC port I/O; `root\wmi` `LENOVO_GAMEZONE_DATA` for fan modes.
 - [ ] **Step 1: Confirm SDK + scaffold**
 
 ```bash
-cd "C:/Users/AaryanMehta/Downloads/thinkcentre-fan-control"
+cd "<repo-root>"
 dotnet --version    # must print an 8.x SDK; if not, stop — SDK not installed
 dotnet new classlib -n Tcfc.Core -o src/Tcfc.Core -f net8.0
 dotnet sln add src/Tcfc.Core

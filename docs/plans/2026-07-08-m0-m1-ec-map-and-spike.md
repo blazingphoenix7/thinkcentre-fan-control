@@ -83,7 +83,7 @@ Intel IPF ownership → assess the hardware thermal failsafe → GO/NO-GO report
 
 The repo uses the owner's already-configured git identity. Verify it, and do **not** override it:
 ```bash
-cd "C:/Users/AaryanMehta/Downloads/thinkcentre-fan-control"
+cd "<repo-root>"
 git config user.name    # -> Aaryan Mehta
 git config user.email   # -> the owner's own configured commit email (leave as-is)
 ```
@@ -116,7 +116,7 @@ Verify: `tools/iasl/iasl.exe -v` (or `iasl -v`) prints a version.
 
 The recon dumps are raw AML. Copy them into scratch with `.aml` names:
 ```bash
-cd "C:/Users/AaryanMehta/Downloads/thinkcentre-fan-control"
+cd "<repo-root>"
 mkdir -p work/acpi && cp docs/research/recon/acpireg-*.bin work/acpi/
 cd work/acpi
 for f in acpireg-*.bin; do mv "$f" "$(echo "$f" | sed -E 's/acpireg-([A-Z0-9]+)_.*/\1.aml/')"; done
@@ -244,7 +244,7 @@ Guards against transcription error and future DSDT drift by re-deriving the offs
 
 Run:
 ```bash
-cd "C:/Users/AaryanMehta/Downloads/thinkcentre-fan-control"
+cd "<repo-root>"
 dotnet new sln -n thinkcentre-fan-control
 dotnet new classlib -n Tcfc.EcMap -o src/Tcfc.EcMap -f net8.0
 dotnet new xunit -n Tcfc.Tests -o tests/Tcfc.Tests -f net8.0
@@ -509,7 +509,7 @@ git commit -m "M1: record LpcACPIEC IOCTL interface (read/write command contract
 - [ ] **Step 1: Scaffold the console project**
 
 ```bash
-cd "C:/Users/AaryanMehta/Downloads/thinkcentre-fan-control"
+cd "<repo-root>"
 dotnet new console -n Tcfc.Spike -o src/Tcfc.Spike -f net8.0
 dotnet sln add src/Tcfc.Spike
 dotnet add src/Tcfc.Spike reference src/Tcfc.EcMap
