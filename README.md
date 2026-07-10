@@ -9,8 +9,9 @@ tool reads the fan tach directly from the embedded controller and puts the
 **actual fan RPM** in your tray, next to one-click firmware fan modes
 (quiet / balanced / performance).
 
-![Tray showing live fan RPM](docs/screenshots/tray-tooltip.png)
-![Tray menu with live RPM, hottest sensor, and fan-mode presets](docs/screenshots/tray-menu.png)
+![ThinkCentre Fan Control — live fan RPM, hottest sensor, and firmware fan modes](docs/screenshots/monitor.png)
+
+![Live fan RPM climbing under load, read straight from the embedded controller](docs/screenshots/demo.gif)
 
 ## What it does
 
