@@ -17,6 +17,13 @@ internal static class PawnIoNative
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     internal static extern bool SetDllDirectory(string p);
 
+    // Thread affinity, for per-core MSR reads (the module reads on whatever core runs it).
+    [DllImport("kernel32.dll")]
+    internal static extern IntPtr GetCurrentThread();
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    internal static extern UIntPtr SetThreadAffinityMask(IntPtr thread, UIntPtr mask);
+
     [DllImport("PawnIOLib.dll")]
     internal static extern int pawnio_open(out IntPtr h);
 

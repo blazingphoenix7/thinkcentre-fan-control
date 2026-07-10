@@ -28,4 +28,11 @@
     </None>
   </ItemGroup>
 
+  <!-- Same for the Intel MSR module used for per-core CPU temperatures. -->
+  <ItemGroup Condition="Exists('..\..\lib\pawnio\modules\IntelMSR.bin')">
+    <None Include="..\..\lib\pawnio\modules\IntelMSR.bin" Link="IntelMSR.bin">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

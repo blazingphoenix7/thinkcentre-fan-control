@@ -36,6 +36,8 @@ internal static class Program
                 return 0;
             case "monitor":
                 return Monitor();
+            case "temps":
+                return Temps();
             case "mode" when args.Length == 1:
                 return ShowMode();
             case "mode":
@@ -54,6 +56,7 @@ internal static class Program
 
             usage:
               Tcfc.Cli monitor                            live RPM + EC temps + fan mode until a key is pressed
+              Tcfc.Cli temps                              Tjmax and per-core CPU temperatures via Intel MSR
               Tcfc.Cli mode                               show current and supported fan modes
               Tcfc.Cli mode <quiet|balanced|performance>  set the fan mode (verified board only), then read back
 
@@ -110,6 +113,17 @@ internal static class Program
                 Thread.Sleep(50);
             }
         }
+    }
+
+    // Console entry point is single-threaded, so PerCore's affinity pinning is fine here.
+    private static int Temps()
+    {
+        using var cpu = new CpuTemps();
+        Console.WriteLine($"Tjmax: {cpu.Tjmax()} C");
+        int[] temps = cpu.PerCore();
+        for (int i = 0; i < temps.Length; i++)
+            Console.WriteLine(temps[i] < 0 ? $"core {i}: n/a" : $"core {i}: {temps[i]} C");
+        return 0;
     }
 
     private static int ShowMode()
