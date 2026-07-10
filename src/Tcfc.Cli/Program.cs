@@ -82,7 +82,7 @@ internal static class Program
         int lineWidth = 0;
         while (true)
         {
-            int rpm = ec.Rpm();
+            int rpm = ec.Rpm(); // -1 = no reading (EC lock or handshake timeout)
             int[] temps = ec.Temps();
             string mode;
             try
@@ -94,7 +94,8 @@ internal static class Program
                 mode = "?"; // WMI mode read failed; EC monitoring still works.
             }
 
-            string line = $"RPM {rpm} | temps[0x21..0x2F] {string.Join(' ', temps)} | mode {mode}";
+            string rpmText = rpm < 0 ? "-" : rpm.ToString();
+            string line = $"RPM {rpmText} | temps[0x21..0x2F] {string.Join(' ', temps)} | mode {mode}";
             if (refreshInPlace)
             {
                 lineWidth = Math.Max(lineWidth, line.Length);

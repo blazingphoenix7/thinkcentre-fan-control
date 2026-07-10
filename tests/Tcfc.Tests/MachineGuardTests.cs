@@ -11,6 +11,13 @@ public class MachineGuardTests
         => Assert.Equal(rpm, MachineGuard.RpmFromBytes(hi, lo));
 
     [Theory]
+    [InlineData(0x04, 0x3B, 1083)]
+    [InlineData(-1, 0x3B, null)]
+    [InlineData(0x04, -1, null)]
+    public void RpmOrNull_NullInsteadOfFabricatedReading(int hi, int lo, int? rpm)
+        => Assert.Equal(rpm, MachineGuard.RpmOrNull(hi, lo));
+
+    [Theory]
     [InlineData("3376", true)]
     [InlineData(" 3376 ", true)]
     [InlineData("3427", false)]

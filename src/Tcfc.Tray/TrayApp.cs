@@ -1,6 +1,6 @@
+using System.Diagnostics;
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
-using Microsoft.Win32;
 using Tcfc.Core;
 
 namespace Tcfc.Tray;
@@ -16,8 +16,10 @@ namespace Tcfc.Tray;
 /// </summary>
 internal sealed class TrayApp : ApplicationContext
 {
-    private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValueName = "ThinkCentreFanControl";
+    // Autostart is a Task Scheduler logon task, not an HKCU Run entry: the
+    // exe manifest requires elevation, and a Run entry cannot silently
+    // elevate at logon — a task with "run with highest privileges" can.
+    private const string AutostartTaskName = "ThinkCentreFanControl";
 
     // Shown in both the tooltip and the menu header while degraded. Keep it
     // short: NotifyIcon.Text is hard-capped (63 chars classic).
@@ -88,7 +90,7 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_autostartItem);
         _menu.Items.Add(exitItem);
-        // Re-read the Run value on every open: it can change behind our back.
+        // Re-query the scheduled task on every open: it can change behind our back.
         _menu.Opening += (_, _) => _autostartItem.Checked = IsAutostartEnabled();
 
         _fanIcon = CreateFanIcon();
@@ -121,7 +123,10 @@ internal sealed class TrayApp : ApplicationContext
 
         try
         {
+            // -1 = no reading this beat (EC lock or handshake timeout);
+            // shown as "-", same as an unavailable temperature.
             int rpm = _ec.Rpm();
+            string rpmText = rpm < 0 ? "-" : rpm.ToString();
 
             // "Hottest sensor", deliberately not "CPU"/"temp": the EC block's
             // sensor-to-component mapping is unverified, and TempSummary
@@ -129,8 +134,8 @@ internal sealed class TrayApp : ApplicationContext
             // docs/research/temp-labeling.md).
             int? hottest = TempSummary.Representative(_ec.Temps());
 
-            _notifyIcon.Text = $"{rpm} RPM";
-            _header.Text = $"RPM {rpm}  |  hottest sensor {hottest?.ToString() ?? "-"} C";
+            _notifyIcon.Text = $"{rpmText} RPM";
+            _header.Text = $"RPM {rpmText}  |  hottest sensor {hottest?.ToString() ?? "-"} C";
         }
         catch
         {
@@ -193,16 +198,34 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// Runs schtasks.exe hidden (no console window flash) and returns its
+    /// exit code — 0 means the query/create/delete succeeded.
+    /// </summary>
+    private static int RunSchtasks(string arguments)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "schtasks.exe",
+            Arguments = arguments,
+            CreateNoWindow = true,
+            UseShellExecute = false,
+        };
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("schtasks.exe could not be started.");
+        process.WaitForExit();
+        return process.ExitCode;
+    }
+
     private static bool IsAutostartEnabled()
     {
         try
         {
-            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
-            return key?.GetValue(RunValueName) is not null;
+            return RunSchtasks($"/Query /TN \"{AutostartTaskName}\"") == 0;
         }
         catch
         {
-            return false;
+            return false; // no task (or no schtasks) counts as "not enabled"
         }
     }
 
@@ -210,17 +233,21 @@ internal sealed class TrayApp : ApplicationContext
     {
         try
         {
-            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath);
-            if (key.GetValue(RunValueName) is null)
+            if (IsAutostartEnabled())
             {
-                string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
-                key.SetValue(RunValueName, $"\"{exePath}\"");
-                _autostartItem.Checked = true;
+                int exitCode = RunSchtasks($"/Delete /TN \"{AutostartTaskName}\" /F");
+                if (exitCode != 0)
+                    throw new InvalidOperationException($"schtasks /Delete failed (exit code {exitCode}).");
+                _autostartItem.Checked = false;
             }
             else
             {
-                key.DeleteValue(RunValueName, throwOnMissingValue: false);
-                _autostartItem.Checked = false;
+                string exePath = Environment.ProcessPath ?? Application.ExecutablePath;
+                int exitCode = RunSchtasks(
+                    $"/Create /TN \"{AutostartTaskName}\" /TR \"\\\"{exePath}\\\"\" /SC ONLOGON /RL HIGHEST /F");
+                if (exitCode != 0)
+                    throw new InvalidOperationException($"schtasks /Create failed (exit code {exitCode}).");
+                _autostartItem.Checked = true;
             }
         }
         catch (Exception ex)

@@ -18,7 +18,11 @@ public sealed class EcReader : IDisposable
     private const int RdEc = 0x80;            // command: read EC RAM byte
 
     // System-wide EC lock shared with firmware/other EC users (best effort).
+    // Taken per read transaction, never held across calls: holding it for the
+    // object's lifetime would starve every other EC consumer on the machine
+    // (including a second instance of this app's own CLI).
     private const string EcMutexName = @"Global\Access_EC";
+    private const int EcMutexTimeoutMs = 500;
 
     // EC map for the verified target board: fan tach at 0x00 (hi) / 0x01 (lo),
     // temperature block at 0x21..0x2F.
@@ -35,7 +39,7 @@ public sealed class EcReader : IDisposable
     /// Opens PawnIO and loads the LpcACPIEC module blob. When
     /// <paramref name="modulePath"/> is null the blob is searched next to the
     /// executable, then at the repository dev path relative to the build
-    /// output, then at the absolute repository path.
+    /// output, then in the PawnIO install's modules directory.
     /// </summary>
     /// <exception cref="EcUnavailableException">
     /// PawnIO is not installed / not reachable, the module blob is missing,
@@ -81,8 +85,9 @@ public sealed class EcReader : IDisposable
             throw new EcUnavailableException($"pawnio_load of '{path}' failed with HRESULT 0x{hr:X8}.");
         }
 
-        // Hold the shared EC lock for this object's lifetime (best effort:
-        // proceed even if it cannot be opened, created, or acquired in time).
+        // Open (or create) the shared EC lock object. It is NOT acquired
+        // here: each public read call takes it just for its own transaction.
+        // Best effort — proceed without one if it cannot be opened or created.
         try
         {
             _ecMutex = Mutex.OpenExisting(EcMutexName);
@@ -98,30 +103,96 @@ public sealed class EcReader : IDisposable
                 _ecMutex = null;
             }
         }
-
-        if (_ecMutex is not null)
-        {
-            try
-            {
-                _ecMutex.WaitOne(2000);
-            }
-            catch (AbandonedMutexException)
-            {
-                // Previous holder died while owning the lock; ownership has
-                // transferred to us and the EC state is re-read every call.
-            }
-        }
     }
 
     /// <summary>
     /// Reads one byte of EC RAM at <paramref name="offset"/> using the RD_EC
-    /// handshake. Returns -1 if the EC did not respond within the poll budget.
+    /// handshake, under the shared EC lock. Returns -1 if the lock could not
+    /// be acquired or the EC did not respond within the poll budget.
     /// </summary>
     public int ReadByte(int offset)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (offset is < 0 or > 0xFF)
             throw new ArgumentOutOfRangeException(nameof(offset), offset, "EC RAM offsets are 0x00..0xFF.");
+
+        if (!TryEnterEcLock())
+            return -1;
+        try
+        {
+            return ReadByteUnlocked(offset);
+        }
+        finally
+        {
+            ExitEcLock();
+        }
+    }
+
+    /// <summary>
+    /// Live fan RPM decoded from the tach register pair (0x00 high, 0x01 low),
+    /// both bytes read under one hold of the shared EC lock. Returns -1 when
+    /// the reading is unavailable (lock or EC timeout) — never a value
+    /// fabricated from partial bytes.
+    /// </summary>
+    public int Rpm()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (!TryEnterEcLock())
+            return -1;
+        int hi, lo;
+        try
+        {
+            hi = ReadByteUnlocked(RpmHighOffset);
+            lo = ReadByteUnlocked(RpmLowOffset);
+        }
+        finally
+        {
+            ExitEcLock();
+        }
+        return MachineGuard.RpmOrNull(hi, lo) ?? -1;
+    }
+
+    /// <summary>
+    /// Raw bytes of the EC temperature block, offsets 0x21..0x2F inclusive
+    /// (15 values), read under one hold of the shared EC lock; a value of -1
+    /// means that offset (or the lock) timed out.
+    /// </summary>
+    public int[] Temps()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var temps = new int[TempLastOffset - TempFirstOffset + 1];
+        if (!TryEnterEcLock())
+        {
+            Array.Fill(temps, -1);
+            return temps;
+        }
+        try
+        {
+            for (int i = 0; i < temps.Length; i++)
+                temps[i] = ReadByteUnlocked(TempFirstOffset + i);
+        }
+        finally
+        {
+            ExitEcLock();
+        }
+        return temps;
+    }
+
+    /// <summary>
+    /// The raw RD_EC handshake for one byte. Callers must hold the shared EC
+    /// lock (see <see cref="TryEnterEcLock"/>). Returns -1 if the EC did not
+    /// respond within the poll budget.
+    /// </summary>
+    private int ReadByteUnlocked(int offset)
+    {
+        // Drain any stale byte a previously timed-out transaction (ours or
+        // another EC user's) left in the output buffer, so this read cannot
+        // pick up a leftover value. Bounded: the EC only ever has one byte
+        // pending, so a few iterations always clear it.
+        for (int i = 0; i < 16 && (PioRead(EcStatusCommand) & Obf) != 0; i++)
+            PioRead(EcData);
 
         if (!WaitFlag(Ibf, set: false))
             return -1;
@@ -135,20 +206,39 @@ public sealed class EcReader : IDisposable
     }
 
     /// <summary>
-    /// Live fan RPM decoded from the tach register pair (0x00 high, 0x01 low).
+    /// Takes the shared EC lock for one read transaction. True means proceed
+    /// (lock held, or no lock object exists on this system — then
+    /// <see cref="ExitEcLock"/> is a no-op); false means another EC user held
+    /// it past the timeout and the caller must report "unavailable" instead
+    /// of touching the ports unlocked.
     /// </summary>
-    public int Rpm() => MachineGuard.RpmFromBytes(ReadByte(RpmHighOffset), ReadByte(RpmLowOffset));
-
-    /// <summary>
-    /// Raw bytes of the EC temperature block, offsets 0x21..0x2F inclusive
-    /// (15 values); a value of -1 means that offset timed out.
-    /// </summary>
-    public int[] Temps()
+    private bool TryEnterEcLock()
     {
-        var temps = new int[TempLastOffset - TempFirstOffset + 1];
-        for (int i = 0; i < temps.Length; i++)
-            temps[i] = ReadByte(TempFirstOffset + i);
-        return temps;
+        if (_ecMutex is null)
+            return true;
+        try
+        {
+            return _ecMutex.WaitOne(EcMutexTimeoutMs);
+        }
+        catch (AbandonedMutexException)
+        {
+            // Previous holder died while owning the lock; ownership has
+            // transferred to us and the handshake re-syncs the EC state.
+            return true;
+        }
+    }
+
+    private void ExitEcLock()
+    {
+        try
+        {
+            _ecMutex?.ReleaseMutex();
+        }
+        catch
+        {
+            // Release is best effort; the paired TryEnterEcLock succeeded, so
+            // this only guards against exotic handle states.
+        }
     }
 
     /// <summary>
@@ -216,10 +306,15 @@ public sealed class EcReader : IDisposable
 
         string[] candidates =
         {
+            // Next to the executable — the deployment layout.
             Path.Combine(AppContext.BaseDirectory, "LpcACPIEC.bin"),
+            // Repo dev layout: the exe sits six directories below the repo
+            // root (src/<project>/bin/x64/<config>/<tfm>/), the module in
+            // lib\pawnio\ at the root.
             Path.GetFullPath(Path.Combine(
-                AppContext.BaseDirectory, "..", "..", "..", "..", "..", "lib", "pawnio", "LpcACPIEC.bin")),
-            @"C:\Users\AaryanMehta\Downloads\thinkcentre-fan-control\lib\pawnio\LpcACPIEC.bin",
+                AppContext.BaseDirectory, "..", "..", "..", "..", "..", "..", "lib", "pawnio", "LpcACPIEC.bin")),
+            // A PawnIO install that ships its modules.
+            @"C:\Program Files\PawnIO\modules\LpcACPIEC.bin",
         };
 
         foreach (string candidate in candidates)
@@ -230,7 +325,7 @@ public sealed class EcReader : IDisposable
 
         throw new EcUnavailableException(
             "PawnIO EC module LpcACPIEC.bin not found. Searched: " + string.Join("; ", candidates) +
-            @". Place LpcACPIEC.bin next to the executable or under lib\pawnio\ in the repository.");
+            ". Place LpcACPIEC.bin next to the executable.");
     }
 
     public void Dispose()
@@ -239,19 +334,10 @@ public sealed class EcReader : IDisposable
             return;
         _disposed = true;
 
-        if (_ecMutex is not null)
-        {
-            try
-            {
-                _ecMutex.ReleaseMutex();
-            }
-            catch
-            {
-                // Not owned (acquisition timed out) — release is best effort.
-            }
-            _ecMutex.Dispose();
-            _ecMutex = null;
-        }
+        // The lock is taken per read transaction, so there is nothing to
+        // release here — just drop the handle.
+        _ecMutex?.Dispose();
+        _ecMutex = null;
 
         if (_handle != IntPtr.Zero)
         {

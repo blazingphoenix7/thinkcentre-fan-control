@@ -44,8 +44,12 @@ call instead.
 - Windows, running the app **as Administrator** (raw EC port I/O needs a
   kernel driver).
 - The signed **[PawnIO](https://pawnio.eu/)** driver installed.
-- PawnIO's EC module **`LpcACPIEC.bin`** placed next to the exe (during
-  development the repo also looks in `lib\pawnio\`).
+- PawnIO's EC module **`LpcACPIEC.bin`** placed next to the exe — download the
+  signed `LpcACPIEC` module from the
+  [PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases).
+  (When building from source, a repo-root `lib\pawnio\LpcACPIEC.bin` is found
+  too, as is `C:\Program Files\PawnIO\modules\` if your PawnIO install ships
+  modules.)
 
 ## Supported hardware
 

@@ -30,10 +30,17 @@ public static class FanModes
         return (FanMode)Convert.ToUInt32(result["Data"]);
     }
 
-    /// <summary>Sets the fan mode (SetSmartFanMode).</summary>
+    /// <summary>
+    /// Sets the fan mode (SetSmartFanMode). Refuses on anything but the
+    /// verified board — callers gate first, but a firmware write must be
+    /// impossible to reach on unverified hardware even through a new caller.
+    /// </summary>
     [SupportedOSPlatform("windows")]
     public static void Set(FanMode mode)
     {
+        if (!MachineGuard.IsSupportedBoard(Board.Product()))
+            throw new InvalidOperationException("Fan mode control is only supported on the verified model.");
+
         using var gameZone = GetGameZoneInstance();
         using var inParams = gameZone.GetMethodParameters("SetSmartFanMode");
         inParams["Data"] = (uint)mode;
@@ -60,7 +67,8 @@ public static class FanModes
         {
             using var searcher = new ManagementObjectSearcher(
                 @"\\.\root\wmi", "SELECT * FROM LENOVO_GAMEZONE_DATA");
-            foreach (ManagementObject instance in searcher.Get())
+            using var results = searcher.Get();
+            foreach (ManagementObject instance in results)
                 return instance;
         }
         catch (ManagementException ex)
