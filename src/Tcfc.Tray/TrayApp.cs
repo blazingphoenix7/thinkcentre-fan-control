@@ -7,7 +7,7 @@ namespace Tcfc.Tray;
 
 /// <summary>
 /// The tray face of the tool: live fan RPM in the icon tooltip, a live
-/// "RPM | hottest temp" header in the context menu, board-gated fan-mode
+/// "RPM | hottest sensor" header in the context menu, board-gated fan-mode
 /// presets, an autostart toggle, and exit.
 /// Fails toward loud-and-safe: when the EC driver is unavailable the app
 /// still runs (clearly labelled, mode changes disabled); on anything but the
@@ -45,7 +45,7 @@ internal sealed class TrayApp : ApplicationContext
             _ec = null;
         }
 
-        _header = new ToolStripMenuItem(_ec is null ? EcUnavailableText : "RPM -  |  temp -")
+        _header = new ToolStripMenuItem(_ec is null ? EcUnavailableText : "RPM -  |  hottest sensor - C")
         {
             Enabled = false,
         };
@@ -122,19 +122,15 @@ internal sealed class TrayApp : ApplicationContext
         try
         {
             int rpm = _ec.Rpm();
-            int[] temps = _ec.Temps();
 
-            // Hottest plausible sensor in the EC block; 0 and -1 mark
-            // empty/timed-out offsets. Rough until the sensors get labels.
-            int hottest = 0;
-            foreach (int t in temps)
-            {
-                if (t > hottest)
-                    hottest = t;
-            }
+            // "Hottest sensor", deliberately not "CPU"/"temp": the EC block's
+            // sensor-to-component mapping is unverified, and TempSummary
+            // filters bytes that cannot be plain temperatures (see
+            // docs/research/temp-labeling.md).
+            int? hottest = TempSummary.Representative(_ec.Temps());
 
             _notifyIcon.Text = $"{rpm} RPM";
-            _header.Text = $"RPM {rpm}  |  temp {(hottest > 0 ? hottest.ToString() : "-")}";
+            _header.Text = $"RPM {rpm}  |  hottest sensor {hottest?.ToString() ?? "-"} C";
         }
         catch
         {
@@ -255,8 +251,11 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     /// <summary>
-    /// Draws the tray icon at runtime (a plain four-blade fan) so the exe
-    /// ships without image assets.
+    /// Draws the tray icon at runtime (no image assets): a solid dark disc
+    /// with a light rim carrying a bold three-blade propeller. Three blades at
+    /// 120° cannot be mistaken for the four-arrow "move" cursor, the dark disc
+    /// keeps it visible on light taskbars and the light rim/blades on dark
+    /// ones, and the shapes are chunky enough to survive the 16x16 downscale.
     /// </summary>
     private static Icon CreateFanIcon()
     {
@@ -264,20 +263,28 @@ internal sealed class TrayApp : ApplicationContext
         using (var g = Graphics.FromImage(bitmap))
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
-            using var fill = new SolidBrush(Color.FromArgb(235, 238, 243));
-            using var outline = new Pen(Color.FromArgb(58, 64, 76), 2f);
+            var dark = Color.FromArgb(38, 46, 58);
+            var light = Color.FromArgb(244, 246, 250);
+            using var darkFill = new SolidBrush(dark);
+            using var lightFill = new SolidBrush(light);
+            using var rim = new Pen(light, 2f);
 
+            // Badge: dark disc with a light rim just inside its edge.
+            g.FillEllipse(darkFill, 1f, 1f, 30f, 30f);
+            g.DrawEllipse(rim, 2f, 2f, 28f, 28f);
+
+            // Three light blades at 120° radiating from the hub.
             g.TranslateTransform(16f, 16f);
-            for (int i = 0; i < 4; i++)
+            for (int i = 0; i < 3; i++)
             {
-                g.FillEllipse(fill, -4.5f, -14.5f, 9f, 13f);
-                g.DrawEllipse(outline, -4.5f, -14.5f, 9f, 13f);
-                g.RotateTransform(90f);
+                g.FillEllipse(lightFill, -4f, -13.5f, 8f, 11f);
+                g.RotateTransform(120f);
             }
             g.ResetTransform();
 
-            g.FillEllipse(fill, 11f, 11f, 10f, 10f);
-            g.DrawEllipse(outline, 11f, 11f, 10f, 10f);
+            // Hub with a dark axle dot.
+            g.FillEllipse(lightFill, 12f, 12f, 8f, 8f);
+            g.FillEllipse(darkFill, 14.5f, 14.5f, 3f, 3f);
         }
 
         // GetHicon hands out an unmanaged handle; clone into a managed icon
