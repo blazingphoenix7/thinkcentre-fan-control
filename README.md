@@ -41,44 +41,83 @@ EC access is **read-only by construction**: the EC I/O layer physically has no
 RAM-write path, and fan-mode changes go through the firmware's supported WMI
 call instead.
 
-## Requirements
+## Installation
 
-- Windows, running the app **as Administrator** (raw EC port I/O needs a
-  kernel driver).
-- The signed **[PawnIO](https://pawnio.eu/)** driver installed.
-- PawnIO's EC module **`LpcACPIEC.bin`** placed next to the exe — download the
-  signed `LpcACPIEC` module from the
-  [PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases).
-  (When building from source, a repo-root `lib\pawnio\LpcACPIEC.bin` is found
-  too, as is `C:\Program Files\PawnIO\modules\` if your PawnIO install ships
-  modules.)
+**Before you start, you need:**
+- A **Windows 10 / 11** desktop — ideally a **Lenovo ThinkCentre M70t Gen 6**, the verified model (other ThinkCentre / ThinkStation desktops: see [Supported hardware](#supported-hardware)).
+- **Administrator** rights on the machine.
+
+### Step 1 — Install the PawnIO driver
+
+The app reads the embedded controller directly, which needs a ring-0 driver. It uses **[PawnIO](https://pawnio.eu/)** — a small, **code-signed** driver (the same one [FanControl](https://github.com/Rem0o/FanControl.Releases) and LibreHardwareMonitor use), *not* the old antivirus-flagged WinRing0.
+
+1. Download the installer from **[pawnio.eu](https://pawnio.eu/)**.
+2. Run it and click through — accept the UAC prompt (it installs a signed kernel driver and a background service).
+
+### Step 2 — Download ThinkCentre Fan Control
+
+1. Grab the latest **[release ZIP](../../releases/latest)**.
+2. Unzip it anywhere (e.g. `C:\Tools\ThinkCentreFanControl`). The signed `LpcACPIEC.bin` EC module is **already bundled in the ZIP** — nothing else to download. Keep the files together; don't move `Tcfc.Tray.exe` out on its own or it won't find the module.
+
+### Step 3 — Run it
+
+Right-click **`Tcfc.Tray.exe`** → **Run as administrator**. (A normal double-click also works — it requests elevation and shows a UAC prompt.)
+
+> **First-run SmartScreen note:** the release exe isn't code-signed, so Windows may pop *"Windows protected your PC."* Click **More info → Run anyway**. It's fully open source — read every line here, or [build it yourself](#build-from-source).
+
+A small **fan icon** appears in your system tray (it may be tucked under the **`^`** "show hidden icons" arrow). That's it — you're running.
+
+## Usage
+
+- **Hover** the tray icon → the tooltip shows your live **fan RPM**.
+- **Right-click** the icon for the menu:
+  - **Header line:** `RPM <n>  |  hottest sensor <n> °C`, refreshing every second. ("Hottest sensor" is deliberately vague — see [What it does](#what-it-does).)
+  - **Fan mode → Quiet / Balanced / Performance** — click one to switch; a ✓ marks the active mode. *(Enabled only on the verified board — see [Supported hardware](#supported-hardware).)*
+  - **Start with Windows** — launches it at logon (as an elevated scheduled task, so no UAC prompt each boot).
+  - **Exit.**
+
+**What the fan modes do:** they select the firmware's own thermal profile — the exact control Lenovo Vantage exposes — so the fan curve stays applied and regulated by the firmware. *Quiet* keeps it calmer, *Performance* lets it ramp sooner. They are presets, **not** a manual RPM slider (see [What it deliberately does not do](#what-it-deliberately-does-not-do)).
 
 ## Supported hardware
 
-Verified on a **ThinkCentre M70t Gen 6** (baseboard product `3376`). On any
-other machine the app runs **monitoring-only**: fan-mode control is gated to
-the verified board, so it will show readings but refuse mode writes.
-Verification reports from other ThinkCentre / ThinkStation models are very
-welcome — the EC layout of each board needs to be checked before its mode
-control can be enabled.
+Everything is **verified on a ThinkCentre M70t Gen 6** (baseboard product `3376`).
 
-## Download & run
+- **On the M70t Gen 6:** RPM and temperature readings are correct, and fan-mode control is enabled.
+- **On other ThinkCentre / ThinkStation desktops:** fan-mode control is **disabled by design** — the app refuses to write firmware modes on an unverified board (the menu shows *"monitoring only"*). And because the readings use the M70t's EC register layout, on a different board **the RPM/temperature numbers may be wrong or meaningless** — don't trust them until that board is verified.
 
-Grab the latest **[release zip](../../releases)**, unzip it anywhere, and run
-`Tcfc.Tray.exe` **as Administrator**. The signed `LpcACPIEC.bin` module is
-bundled in the zip; you still need the [PawnIO](https://pawnio.eu/) driver
-installed (see Requirements above).
+Want it working on your model? The EC layout (which registers hold the tach and temperatures) has to be checked per board — [open an issue](../../issues) with your model name and baseboard product and we can figure it out.
+
+## Uninstall
+
+Tray → **Exit** (untick **Start with Windows** first if you enabled it), then delete the unzipped folder. To remove the driver as well, uninstall **PawnIO** from *Settings → Apps → Installed apps*.
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| **"EC not available"** on launch | You're not running as **Administrator**, **PawnIO isn't installed**, or `LpcACPIEC.bin` isn't beside the exe (it ships in the ZIP — keep the files together). |
+| Tray shows **`- RPM`** | A read timed out — usually another EC/fan/monitoring tool is holding the EC lock (close it), or you're not elevated. |
+| **Fan mode items greyed out** / "monitoring only" | Your board isn't the verified `3376`; control is gated for safety (see [Supported hardware](#supported-hardware)). |
+| **"Windows protected your PC"** | Unsigned exe → **More info → Run anyway**, or build from source. |
 
 ## Build from source
 
+Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0).
+
 ```
 dotnet build
+dotnet test tests/Tcfc.Tests
 ```
 
-Then run `src\Tcfc.Tray\bin\x64\Debug\net8.0-windows\Tcfc.Tray.exe` as
-Administrator (with `LpcACPIEC.bin` reachable as above). The CLI harness lives
-at `src\Tcfc.Cli\...\Tcfc.Cli.exe` (`monitor`, `mode`,
-`mode quiet|balanced|performance`). Tests: `dotnet test tests/Tcfc.Tests`.
+Run `src\Tcfc.Tray\bin\x64\Debug\net8.0-windows\Tcfc.Tray.exe` as Administrator. When building, the module is found next to the exe, at the repo's `lib\pawnio\LpcACPIEC.bin`, or at `C:\Program Files\PawnIO\modules\` — grab the signed `LpcACPIEC` module from the [PawnIO.Modules releases](https://github.com/namazso/PawnIO.Modules/releases) if you don't already have it.
+
+A console harness for scripting/power use is built alongside the tray (not shipped in the release ZIP): `src\Tcfc.Cli\bin\x64\Debug\net8.0-windows\Tcfc.Cli.exe`, run from an elevated terminal:
+
+```
+Tcfc.Cli monitor                            # live RPM + the full 15-byte EC temp block + mode, until a key
+Tcfc.Cli mode                               # show current and supported modes
+Tcfc.Cli mode quiet|balanced|performance    # set a mode (verified board only)
+```
 
 ## How it works / what was reverse-engineered
 
