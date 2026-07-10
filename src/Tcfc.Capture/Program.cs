@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.Versioning;
@@ -18,6 +19,10 @@ namespace Tcfc.Capture;
 /// firmware WMI at the moment of the frame — nothing is fabricated.
 /// Run from an elevated terminal on the verified machine; this project is
 /// not part of the shipped tray release.
+///
+/// The `slim` subcommand is different: it re-encodes an existing animated
+/// GIF smaller (fewer frames, smaller pixels) and touches no hardware, so it
+/// needs neither elevation nor the EC driver.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static class Program
@@ -34,11 +39,19 @@ internal static class Program
     private const int LoadFrames = 60;      // ~6 s of full-core load, then settle
     private const int ModeReadEvery = 10;   // WMI is slow; refresh the mode ~1/s
 
+    // slim mode: keep every 3rd frame, cap the width at 620 px and replay at
+    // 150 ms/frame — still smooth for a README, at a fraction of the bytes.
+    private const int SlimFrameStride = 3;
+    private const int SlimMaxWidth = 620;
+    private const int SlimDelayMs = 150;
+
     [STAThread]
     private static int Main(string[] args)
     {
         try
         {
+            if (args.Length > 0 && string.Equals(args[0], "slim", StringComparison.OrdinalIgnoreCase))
+                return Slim(args);
             return Run(args);
         }
         catch (EcUnavailableException ex)
@@ -95,6 +108,100 @@ internal static class Program
         throw new InvalidOperationException(
             "Repository root (thinkcentre-fan-control.sln) not found above the executable; " +
             "pass an output directory as the first argument.");
+    }
+
+    /// <summary>
+    /// `slim &lt;input.gif&gt; &lt;output.gif&gt;`: shrinks an animated GIF by
+    /// keeping every <see cref="SlimFrameStride"/>rd frame, downscaling to at
+    /// most <see cref="SlimMaxWidth"/> px wide and re-encoding at
+    /// <see cref="SlimDelayMs"/> ms/frame. Input and output may be the same
+    /// path; the result is then staged in a temp file and swapped in.
+    /// </summary>
+    private static int Slim(string[] args)
+    {
+        if (args.Length != 3)
+        {
+            Console.Error.WriteLine("usage: Tcfc.Capture slim <input.gif> <output.gif>");
+            return 1;
+        }
+
+        string inputPath = Path.GetFullPath(args[1]);
+        string outputPath = Path.GetFullPath(args[2]);
+        if (!File.Exists(inputPath))
+        {
+            Console.Error.WriteLine($"input not found: {inputPath}");
+            return 1;
+        }
+
+        long inputBytes = new FileInfo(inputPath).Length;
+        int inputFrames;
+        var frames = new List<Bitmap>();
+        try
+        {
+            // Image.FromFile keeps the file locked, so copy every kept frame
+            // out into standalone bitmaps and dispose the source before any
+            // writing happens (the output may be this same file).
+            using (Image source = Image.FromFile(inputPath))
+            {
+                var time = new FrameDimension(source.FrameDimensionsList[0]);
+                inputFrames = source.GetFrameCount(time);
+                for (int i = 0; i < inputFrames; i += SlimFrameStride)
+                {
+                    source.SelectActiveFrame(time, i);
+                    frames.Add(Downscale(source, SlimMaxWidth));
+                }
+            }
+
+            // For an in-place run, encode next to the target and swap it in so
+            // a failed encode never destroys the original.
+            bool inPlace = string.Equals(inputPath, outputPath, StringComparison.OrdinalIgnoreCase);
+            string stagePath = inPlace ? outputPath + ".tmp" : outputPath;
+            try
+            {
+                AnimatedGif.Save(stagePath, frames, SlimDelayMs);
+                if (inPlace)
+                    File.Move(stagePath, outputPath, overwrite: true);
+            }
+            finally
+            {
+                if (inPlace && File.Exists(stagePath))
+                    File.Delete(stagePath);
+            }
+        }
+        finally
+        {
+            foreach (Bitmap frame in frames)
+                frame.Dispose();
+        }
+
+        long outputBytes = new FileInfo(outputPath).Length;
+        Console.WriteLine($"in:  {inputFrames,4} frames  {inputBytes,12:N0} bytes  {inputPath}");
+        Console.WriteLine($"out: {frames.Count,4} frames  {outputBytes,12:N0} bytes  {outputPath}");
+        Console.WriteLine($"     {outputBytes * 100.0 / inputBytes:0.#}% of the input size");
+        return 0;
+    }
+
+    /// <summary>
+    /// Copies the image's active frame into a new 24-bpp bitmap no wider than
+    /// <paramref name="maxWidth"/>, preserving the aspect ratio. The caller
+    /// owns the returned bitmap.
+    /// </summary>
+    private static Bitmap Downscale(Image source, int maxWidth)
+    {
+        int width = source.Width;
+        int height = source.Height;
+        if (width > maxWidth)
+        {
+            height = Math.Max(1, (int)Math.Round((double)height * maxWidth / width));
+            width = maxWidth;
+        }
+
+        var scaled = new Bitmap(width, height, PixelFormat.Format24bppRgb);
+        using Graphics g = Graphics.FromImage(scaled);
+        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+        g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+        g.DrawImage(source, new Rectangle(0, 0, width, height));
+        return scaled;
     }
 
     /// <summary>
