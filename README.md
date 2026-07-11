@@ -15,7 +15,7 @@ A small, open-source app for Lenovo **ThinkCentre and ThinkStation desktops**. I
 **per-core CPU temperatures** and the fan modes, including a **Full Speed** setting that Vantage
 won't let you touch.
 
-![The window: live fan RPM, per-core CPU temperatures, and the fan modes](docs/screenshots/dashboard.png)
+![The window taking the fan from idle up to Full Speed: live RPM, per-core CPU temperatures, and the mode selector](docs/screenshots/demo.gif)
 
 </div>
 
@@ -79,6 +79,8 @@ since it asks for elevation). A small fan icon shows up in your tray, possibly h
 > or [build it yourself](#build-from-source).
 
 ## Use it
+
+![The fan-control window: the live RPM readout, the per-core temperature graph, the four fan modes, and the Start-with-Windows toggle](docs/screenshots/dashboard.png)
 
 - **Hover** the tray icon and the tooltip shows your live fan RPM.
 - **Double-click** it to open the window: the big live RPM, a per-core temperature graph, the four fan modes, and a Start-with-Windows toggle. Closing the window drops it back to the tray, it doesn't quit.

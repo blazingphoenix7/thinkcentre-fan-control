@@ -1,38 +1,58 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.Versioning;
-using System.Threading;
 using Tcfc.Core;
 
 namespace Tcfc.Capture;
 
 /// <summary>
-/// Dev-only tool that renders the README assets from live readings: a still
-/// card (monitor.png) and an ~11 s gif that loads every core mid-recording so
-/// the fan ramps. Needs elevation + PawnIO. The slim subcommand just
-/// re-encodes an existing gif smaller and needs neither.
+/// Dev-only tool that renders the README demo GIF. Headless: no EC, no PawnIO,
+/// no elevation, no live hardware at all. The "RPM climbing" story is just a
+/// table of numbers this file builds (an eased ramp up and back down, so the
+/// gif loops) and hands to CardRenderer one frame at a time. The slim
+/// subcommand re-encodes an existing gif smaller and is unrelated to any of
+/// that - it just shrinks whatever file you point it at.
 /// </summary>
 [SupportedOSPlatform("windows")]
 internal static class Program
 {
-    private const string StillName = "monitor.png";
     private const string GifName = "demo.gif";
+    private const string FrameCheckName = "_frame_check.png";
 
-    private const int SeedReads = 24;       // history seeding for the still (~3.5 s)
-    private const int SeedIntervalMs = 150;
+    private const int CoreCount = 10;
+    private const int Tjmax = 105;
 
-    private const int FrameCount = 110;     // ~11 s at ~10 fps
-    private const int FrameDelayMs = 100;
-    private const int LoadStartFrame = 15;  // idle lead-in before the ramp
-    private const int LoadFrames = 60;      // ~6 s of full-core load, then settle
-    private const int ModeReadEvery = 10;   // WMI is slow; refresh the mode ~1/s
+    private const int IdleRpm = 900;
+    private const int PeakRpm = 3970;
+    private const int IdleTempC = 48;
+    private const int PeakTempC = 92;
 
-    // slim: keep every 3rd frame, cap width at 620 px, replay at 150 ms/frame
+    // Ping-pong: ease up over UpFrames steps, then ease back down over
+    // DownFrames without repeating the peak or trough frame, so the loop has
+    // no stutter or held duplicate at either end. Each 880-wide frame is a full
+    // independent image in the stream (~240 KB), so the frame count is the main
+    // lever on file size; 26 keeps the eased ramp smooth while landing the gif
+    // well under GitHub's image-proxy ceiling.
+    private const int UpFrames = 14;
+    private const int DownFrames = UpFrames - 2;
+    private const int FrameDelayMs = 80;
+    private const int HistoryCapacity = 60; // matches DashboardForm's sparkline queue depth
+
+    // rpm near which the verification frame should land, while Full Speed is active.
+    private const int FrameCheckTargetRpm = 3900;
+
+    // Small, fixed per-core phase offsets so the ten cores don't heat in
+    // perfect lockstep - not random: the animation must render identically
+    // every run.
+    private static readonly float[] CorePhaseOffset =
+    {
+        0f, 0.025f, -0.03f, 0.012f, -0.02f, 0.03f, -0.012f, 0.02f, -0.025f, 0.008f,
+    };
+
     private const int SlimFrameStride = 3;
     private const int SlimMaxWidth = 620;
     private const int SlimDelayMs = 150;
@@ -46,13 +66,6 @@ internal static class Program
                 return Slim(args);
             return Run(args);
         }
-        catch (EcUnavailableException ex)
-        {
-            Console.Error.WriteLine(
-                $"EC not available: {ex.Message}. This tool needs Administrator and PawnIO; " +
-                "run it from an elevated terminal on the machine with the driver installed.");
-            return 2;
-        }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"error: {ex.Message}");
@@ -65,19 +78,18 @@ internal static class Program
         string outDir = ResolveOutputDirectory(args);
         Directory.CreateDirectory(outDir);
 
-        using var ec = new EcReader();
         var renderer = new CardRenderer();
-
-        string stillPath = Path.Combine(outDir, StillName);
-        CaptureStill(ec, renderer, stillPath);
-        Console.WriteLine($"wrote {stillPath}");
+        List<Frame> timeline = BuildTimeline();
 
         string gifPath = Path.Combine(outDir, GifName);
-        (int minRpm, int maxRpm) = CaptureGif(ec, renderer, gifPath);
-        Console.WriteLine($"wrote {gifPath}");
-        Console.WriteLine(minRpm <= maxRpm
-            ? $"rpm observed during capture: min {minRpm}, max {maxRpm}"
-            : "rpm observed during capture: no valid readings (EC returned -1 throughout)");
+        SaveGif(renderer, timeline, gifPath);
+        Console.WriteLine($"wrote {gifPath}  ({timeline.Count} frames, {FrameDelayMs} ms each, {CardRenderer.Width}x{CardRenderer.Height})");
+
+        string checkPath = Path.Combine(outDir, FrameCheckName);
+        Frame checkFrame = PickFrameCheck(timeline);
+        SaveFrameCheck(renderer, checkFrame, checkPath);
+        Console.WriteLine($"wrote {checkPath}  (rpm {checkFrame.Rpm}, mode {(FanSelection)checkFrame.ModeIndex})");
+
         return 0;
     }
 
@@ -96,6 +108,108 @@ internal static class Program
         throw new InvalidOperationException(
             "Repository root (thinkcentre-fan-control.sln) not found above the executable; " +
             "pass an output directory as the first argument.");
+    }
+
+    // One point in the animation: everything CardRenderer.Render needs for one frame.
+    private readonly record struct Frame(int Rpm, int[] CoreTemps, int ModeIndex, int[] History);
+
+    private static List<Frame> BuildTimeline()
+    {
+        int total = UpFrames + DownFrames;
+        var progress = new float[total];
+        for (int i = 0; i < UpFrames; i++)
+        {
+            float t = UpFrames == 1 ? 0f : (float)i / (UpFrames - 1);
+            progress[i] = Ease(t);
+        }
+        for (int j = 0; j < DownFrames; j++)
+        {
+            // walks back from just-below-peak to just-above-trough, so the
+            // peak and trough each appear exactly once in the whole loop
+            int mirrorIndex = UpFrames - 2 - j;
+            float t = (float)mirrorIndex / (UpFrames - 1);
+            progress[UpFrames + j] = Ease(t);
+        }
+
+        var frames = new List<Frame>(total);
+        var history = new List<int>(HistoryCapacity);
+        for (int k = 0; k < total; k++)
+        {
+            float p = progress[k];
+            int rpm = (int)MathF.Round(Lerp(IdleRpm, PeakRpm, p));
+
+            var coreTemps = new int[CoreCount];
+            for (int c = 0; c < CoreCount; c++)
+            {
+                float corePhase = CorePhaseOffset[c % CorePhaseOffset.Length];
+                float coreProgress = Math.Clamp(p + corePhase, 0f, 1f);
+                coreTemps[c] = (int)MathF.Round(Lerp(IdleTempC, PeakTempC, coreProgress));
+            }
+
+            history.Add(rpm);
+            if (history.Count > HistoryCapacity)
+                history.RemoveAt(0);
+
+            frames.Add(new Frame(rpm, coreTemps, ModeIndexFor(p), history.ToArray()));
+        }
+        return frames;
+    }
+
+    // Quiet -> Balanced -> Performance -> Full Speed as the ramp climbs, and
+    // back down the same way as it eases back - a pure function of progress,
+    // so the mode reads consistently on both the rise and the fall.
+    private static int ModeIndexFor(float progress) => progress switch
+    {
+        >= 0.80f => 3, // Full Speed
+        >= 0.55f => 2, // Performance
+        >= 0.25f => 1, // Balanced
+        _ => 0,        // Quiet
+    };
+
+    private static float Ease(float t) => (1f - MathF.Cos(MathF.PI * t)) / 2f;
+
+    private static float Lerp(float a, float b, float t) => a + (b - a) * t;
+
+    private static void SaveGif(CardRenderer renderer, List<Frame> timeline, string path)
+    {
+        var bitmaps = new List<Bitmap>(timeline.Count);
+        try
+        {
+            foreach (Frame f in timeline)
+                bitmaps.Add(renderer.Render(f.Rpm, f.CoreTemps, f.ModeIndex, f.History, Tjmax));
+            AnimatedGif.Save(path, bitmaps, FrameDelayMs);
+        }
+        finally
+        {
+            foreach (Bitmap b in bitmaps)
+                b.Dispose();
+        }
+    }
+
+    // The frame closest to FrameCheckTargetRpm while Full Speed is active -
+    // i.e. near the peak of the ramp, per the brief.
+    private static Frame PickFrameCheck(List<Frame> timeline)
+    {
+        Frame best = timeline[0];
+        int bestDiff = int.MaxValue;
+        foreach (Frame f in timeline)
+        {
+            if (f.ModeIndex != 3)
+                continue;
+            int diff = Math.Abs(f.Rpm - FrameCheckTargetRpm);
+            if (diff < bestDiff)
+            {
+                bestDiff = diff;
+                best = f;
+            }
+        }
+        return best;
+    }
+
+    private static void SaveFrameCheck(CardRenderer renderer, Frame frame, string path)
+    {
+        using Bitmap bmp = renderer.Render(frame.Rpm, frame.CoreTemps, frame.ModeIndex, frame.History, Tjmax);
+        bmp.Save(path, ImageFormat.Png);
     }
 
     private static int Slim(string[] args)
@@ -177,149 +291,5 @@ internal static class Program
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.DrawImage(source, new Rectangle(0, 0, width, height));
         return scaled;
-    }
-
-    private static void CaptureStill(EcReader ec, CardRenderer renderer, string path)
-    {
-        Console.WriteLine($"still: sampling rpm for ~{SeedReads * SeedIntervalMs / 1000.0:0.#} s...");
-        var history = new List<int>(SeedReads);
-        int rpm = -1;
-        for (int i = 0; i < SeedReads; i++)
-        {
-            rpm = ec.Rpm();
-            history.Add(rpm);
-            if (i < SeedReads - 1)
-                Thread.Sleep(SeedIntervalMs);
-        }
-
-        int? temp = TempSummary.Representative(ec.Temps());
-        FanMode? mode = TryReadMode();
-
-        using Bitmap card = renderer.Render(rpm, temp, mode, history);
-        card.Save(path, ImageFormat.Png);
-    }
-
-    private static (int Min, int Max) CaptureGif(EcReader ec, CardRenderer renderer, string path)
-    {
-        Console.WriteLine($"gif: capturing {FrameCount} frames (~{FrameCount * FrameDelayMs / 1000} s), " +
-                          $"cpu load frames {LoadStartFrame}-{LoadStartFrame + LoadFrames - 1}...");
-
-        var frames = new List<Bitmap>(FrameCount);
-        var history = new List<int>(CardRenderer.HistorySlots + 1);
-        int min = int.MaxValue, max = int.MinValue;
-        FanMode? mode = TryReadMode();
-        var load = new CpuLoad();
-        try
-        {
-            var clock = Stopwatch.StartNew();
-            for (int i = 0; i < FrameCount; i++)
-            {
-                if (i == LoadStartFrame)
-                {
-                    load.Start();
-                    Console.WriteLine("  cpu load ON");
-                }
-                if (i == LoadStartFrame + LoadFrames)
-                {
-                    load.Stop();
-                    Console.WriteLine("  cpu load off, settling");
-                }
-
-                int rpm = ec.Rpm();
-                int? temp = TempSummary.Representative(ec.Temps());
-                if (i % ModeReadEvery == 0)
-                    mode = TryReadMode();
-
-                history.Add(rpm);
-                if (history.Count > CardRenderer.HistorySlots)
-                    history.RemoveAt(0);
-                if (rpm >= 0)
-                {
-                    min = Math.Min(min, rpm);
-                    max = Math.Max(max, rpm);
-                }
-
-                frames.Add(renderer.Render(rpm, temp, mode, history));
-
-                // pace against the wall clock so capture time matches the
-                // gif's declared timing
-                long nextDue = (long)(i + 1) * FrameDelayMs;
-                int wait = (int)(nextDue - clock.ElapsedMilliseconds);
-                if (wait > 0)
-                    Thread.Sleep(wait);
-            }
-
-            Console.WriteLine("  encoding...");
-            AnimatedGif.Save(path, frames, FrameDelayMs);
-        }
-        finally
-        {
-            load.Stop();
-            foreach (Bitmap frame in frames)
-                frame.Dispose();
-        }
-        return (min, max);
-    }
-
-    private static FanMode? TryReadMode()
-    {
-        try
-        {
-            return FanModes.Get();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    // Loads every logical CPU so the firmware ramps the fan. BelowNormal
-    // priority keeps the capture loop itself responsive.
-    private sealed class CpuLoad
-    {
-        private Thread[]? _threads;
-        private volatile bool _stop;
-        private double _sink; // keeps the loop's result observable
-
-        public void Start()
-        {
-            if (_threads is not null)
-                return;
-            _stop = false;
-            _threads = new Thread[Environment.ProcessorCount];
-            for (int i = 0; i < _threads.Length; i++)
-            {
-                _threads[i] = new Thread(Spin)
-                {
-                    IsBackground = true,
-                    Priority = ThreadPriority.BelowNormal,
-                    Name = $"cpu-load-{i}",
-                };
-                _threads[i].Start();
-            }
-        }
-
-        public void Stop()
-        {
-            Thread[]? threads = _threads;
-            if (threads is null)
-                return;
-            _stop = true;
-            foreach (Thread thread in threads)
-                thread.Join(2000);
-            _threads = null;
-        }
-
-        private void Spin()
-        {
-            double x = 1.000001;
-            while (!_stop)
-            {
-                x = x * 1.0000001 + Math.Sqrt(x + 1.0) - Math.Sin(x);
-                if (!double.IsFinite(x) || x > 1e12)
-                    x = 1.000001;
-            }
-            _sink = x;
-        }
     }
 }
