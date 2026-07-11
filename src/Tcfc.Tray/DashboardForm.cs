@@ -47,6 +47,32 @@ internal sealed class DashboardForm : Form
     private static readonly Font PillFontBold = new("Segoe UI", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
     private static readonly Font SmallFont = new("Segoe UI", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
 
+    // Cached for the same reason as the fonts above: OnPaint runs repeatedly
+    // while the window is visible, so these are built once instead of per frame.
+    private static readonly SolidBrush PanelBgBrush = new(PanelBg);
+    private static readonly SolidBrush TextPrimaryBrush = new(TextPrimary);
+    private static readonly SolidBrush TextMutedBrush = new(TextMuted);
+    private static readonly SolidBrush TextFaintBrush = new(TextFaint);
+    private static readonly SolidBrush AccentBrush = new(Accent);
+    private static readonly SolidBrush AccentTextBrush = new(AccentText);
+    private static readonly SolidBrush WarnAccentBrush = new(WarnAccent);
+    private static readonly SolidBrush HotAccentBrush = new(HotAccent);
+    private static readonly SolidBrush ChartUnderFillBrush = new(Color.FromArgb(26, Accent));
+    private static readonly SolidBrush ChartHaloBrush = new(Color.FromArgb(70, Accent));
+    private static readonly SolidBrush BannerFillBrush = new(Color.FromArgb(30, WarnAccent));
+
+    private static readonly Pen PanelEdgePen = new(PanelEdge, 1f);
+    private static readonly Pen GridLinePen = new(GridLine, 1f);
+    private static readonly Pen PillEdgePen = new(PillEdge, 1f);
+    private static readonly Pen ChartLinePen = new(Accent, 2.2f)
+    {
+        StartCap = LineCap.Round,
+        EndCap = LineCap.Round,
+        LineJoin = LineJoin.Round,
+    };
+    private static readonly Pen FullSpeedEdgePen = new(WarnAccent, 1.4f);
+    private static readonly Pen BannerEdgePen = new(Color.FromArgb(90, WarnAccent), 1f);
+
     private static readonly RectangleF ChartRect = new(320f, 88f, 396f, 200f);
 
     private const int FormWidth = 760;
@@ -90,6 +116,7 @@ internal sealed class DashboardForm : Form
 
     private int _lastRpm = -1;
     private int[]? _lastCoreTemps;
+    private int _tickCount; // gates the per-core temp read in DoTick to every other tick
     private int _tjmax;
     private FanSelection? _currentSelection; // null until the first successful WMI read
     private bool _biosFullSpeed;
@@ -222,7 +249,10 @@ internal sealed class DashboardForm : Form
         while (_history.Count > HistoryCapacity)
             _history.Dequeue();
 
-        if (_cpu is not null)
+        // PerCore() pins affinity across every core to take the reading, and
+        // temps drift slowly, so it only runs on alternating ticks; the last
+        // sample carries over untouched on the ticks in between.
+        if (_cpu is not null && _tickCount % 2 == 0)
         {
             try
             {
@@ -233,6 +263,7 @@ internal sealed class DashboardForm : Form
                 // keep the previous reading; next tick retries
             }
         }
+        _tickCount++;
 
         // The restart banner shows only when the BIOS setting and the actual fan
         // disagree. Grow or shrink the window to fit it, so there is never a gap.
@@ -313,18 +344,15 @@ internal sealed class DashboardForm : Form
     {
         var rect = new RectangleF(18f, 18f, FormWidth - 36f, _baseHeight - 36f);
         using var path = RoundedRect(rect, 16f);
-        using var fill = new SolidBrush(PanelBg);
-        using var edge = new Pen(PanelEdge, 1f);
-        g.FillPath(fill, path);
-        g.DrawPath(edge, path);
+        g.FillPath(PanelBgBrush, path);
+        g.DrawPath(PanelEdgePen, path);
     }
 
     // ---- drawing: card-identical pieces (panel/title/RPM figure/chart) ----
 
     private void DrawTitle(Graphics g)
     {
-        using var muted = new SolidBrush(TextMuted);
-        g.DrawString("ThinkCentre Fan Control · desktop", TitleFont, muted, 42f, 38f);
+        g.DrawString("ThinkCentre Fan Control · desktop", TitleFont, TextMutedBrush, 42f, 38f);
     }
 
     private static void DrawRpmFigure(Graphics g, int rpm)
@@ -332,8 +360,7 @@ internal sealed class DashboardForm : Form
         bool available = rpm >= 0;
         string figure = available ? rpm.ToString(CultureInfo.InvariantCulture) : "-";
 
-        using var figureBrush = new SolidBrush(available ? Accent : TextMuted);
-        using var unitBrush = new SolidBrush(TextMuted);
+        SolidBrush figureBrush = available ? AccentBrush : TextMutedBrush;
 
         const float x = 36f;
         const float y = 64f;
@@ -341,7 +368,7 @@ internal sealed class DashboardForm : Form
         g.DrawString(figure, NumberFont, figureBrush, x, y);
 
         SizeF unitSize = g.MeasureString("RPM", UnitFont);
-        g.DrawString("RPM", UnitFont, unitBrush,
+        g.DrawString("RPM", UnitFont, TextMutedBrush,
             x + figureSize.Width - 8f,
             y + figureSize.Height - unitSize.Height - 16f);
     }
@@ -373,28 +400,24 @@ internal sealed class DashboardForm : Form
 
         int slots = Math.Max(HistoryCapacity, history.Count);
         float slotW = chart.Width / (slots - 1);
-        using (var grid = new Pen(GridLine, 1f))
+        g.DrawRectangle(GridLinePen, chart.X, chart.Y, chart.Width, chart.Height);
+        for (int t = 1; t < 4; t++)
         {
-            g.DrawRectangle(grid, chart.X, chart.Y, chart.Width, chart.Height);
-            for (int t = 1; t < 4; t++)
-            {
-                float gy = chart.Y + chart.Height * t / 4f;
-                g.DrawLine(grid, chart.X, gy, chart.Right, gy);
-            }
-            for (int s = 10; ; s += 10)
-            {
-                float gx = chart.Right - s * slotW;
-                if (gx <= chart.X + 1f)
-                    break;
-                g.DrawLine(grid, gx, chart.Y, gx, chart.Bottom);
-            }
+            float gy = chart.Y + chart.Height * t / 4f;
+            g.DrawLine(GridLinePen, chart.X, gy, chart.Right, gy);
+        }
+        for (int s = 10; ; s += 10)
+        {
+            float gx = chart.Right - s * slotW;
+            if (gx <= chart.X + 1f)
+                break;
+            g.DrawLine(GridLinePen, gx, chart.Y, gx, chart.Bottom);
         }
 
         if (hasData)
         {
-            using var faint = new SolidBrush(TextFaint);
-            g.DrawString(scaleHi.ToString(CultureInfo.InvariantCulture), SmallFont, faint, chart.X + 5f, chart.Y + 4f);
-            g.DrawString(scaleLo.ToString(CultureInfo.InvariantCulture), SmallFont, faint, chart.X + 5f, chart.Bottom - 18f);
+            g.DrawString(scaleHi.ToString(CultureInfo.InvariantCulture), SmallFont, TextFaintBrush, chart.X + 5f, chart.Y + 4f);
+            g.DrawString(scaleLo.ToString(CultureInfo.InvariantCulture), SmallFont, TextFaintBrush, chart.X + 5f, chart.Bottom - 18f);
         }
 
         if (hasData)
@@ -402,15 +425,6 @@ internal sealed class DashboardForm : Form
             float XFor(int index) => chart.Right - (history.Count - 1 - index) * slotW;
             float YFor(int value) =>
                 chart.Bottom - (value - scaleLo) / (float)(scaleHi - scaleLo) * chart.Height;
-
-            using var linePen = new Pen(Accent, 2.2f)
-            {
-                StartCap = LineCap.Round,
-                EndCap = LineCap.Round,
-                LineJoin = LineJoin.Round,
-            };
-            using var underFill = new SolidBrush(Color.FromArgb(26, Accent));
-            using var dotFill = new SolidBrush(Accent);
 
             var run = new List<PointF>();
             PointF? newest = null;
@@ -421,7 +435,7 @@ internal sealed class DashboardForm : Form
                     return;
                 if (run.Count == 1)
                 {
-                    g.FillEllipse(dotFill, run[0].X - 2f, run[0].Y - 2f, 4f, 4f);
+                    g.FillEllipse(AccentBrush, run[0].X - 2f, run[0].Y - 2f, 4f, 4f);
                 }
                 else
                 {
@@ -429,8 +443,8 @@ internal sealed class DashboardForm : Form
                     run.CopyTo(area);
                     area[run.Count] = new PointF(run[run.Count - 1].X, chart.Bottom);
                     area[run.Count + 1] = new PointF(run[0].X, chart.Bottom);
-                    g.FillPolygon(underFill, area);
-                    g.DrawLines(linePen, run.ToArray());
+                    g.FillPolygon(ChartUnderFillBrush, area);
+                    g.DrawLines(ChartLinePen, run.ToArray());
                 }
                 newest = run[run.Count - 1];
                 run.Clear();
@@ -449,37 +463,32 @@ internal sealed class DashboardForm : Form
 
             if (newest.HasValue && history[history.Count - 1] >= 0)
             {
-                using var halo = new SolidBrush(Color.FromArgb(70, Accent));
-                g.FillEllipse(halo, newest.Value.X - 7f, newest.Value.Y - 7f, 14f, 14f);
-                g.FillEllipse(dotFill, newest.Value.X - 3.5f, newest.Value.Y - 3.5f, 7f, 7f);
+                g.FillEllipse(ChartHaloBrush, newest.Value.X - 7f, newest.Value.Y - 7f, 14f, 14f);
+                g.FillEllipse(AccentBrush, newest.Value.X - 3.5f, newest.Value.Y - 3.5f, 7f, 7f);
             }
         }
 
-        using var caption = new SolidBrush(TextFaint);
-        g.DrawString("fan rpm · recent samples", SmallFont, caption, chart.X, chart.Bottom + 8f);
+        g.DrawString("fan rpm · recent samples", SmallFont, TextFaintBrush, chart.X, chart.Bottom + 8f);
     }
 
     // ---- drawing: new dashboard rows ----
 
     private float DrawCpuSection(Graphics g, float y, int[]? coreTemps, int tjmax)
     {
-        using var mutedBrush = new SolidBrush(TextMuted);
         const string label = "cpu cores";
-        g.DrawString(label, LineFont, mutedBrush, ContentLeft, y);
+        g.DrawString(label, LineFont, TextMutedBrush, ContentLeft, y);
 
         if (_cpu is not null && tjmax > 0)
         {
-            using var faintBrush = new SolidBrush(TextFaint);
             float labelW = g.MeasureString(label, LineFont).Width;
-            g.DrawString($"· Tjmax {tjmax.ToString(CultureInfo.InvariantCulture)}°", SmallFont, faintBrush,
+            g.DrawString($"· Tjmax {tjmax.ToString(CultureInfo.InvariantCulture)}°", SmallFont, TextFaintBrush,
                 ContentLeft + labelW + 10f, y + 5f);
         }
         y += LabelBlockHeight;
 
         if (_cpu is null)
         {
-            using var noteBrush = new SolidBrush(TextFaint);
-            g.DrawString("per-core temps unavailable", SmallFont, noteBrush, ContentLeft, y + 6f);
+            g.DrawString("per-core temps unavailable", SmallFont, TextFaintBrush, ContentLeft, y + 6f);
             return y + CoreCellHeight + CoreCellGapY;
         }
 
@@ -501,16 +510,12 @@ internal sealed class DashboardForm : Form
 
     private static void DrawCoreCell(Graphics g, RectangleF rect, int coreIndex, int tempC)
     {
-        using var edge = new Pen(PillEdge, 1f);
         using var path = RoundedRect(rect, 8f);
-        g.DrawPath(edge, path);
+        g.DrawPath(PillEdgePen, path);
 
         string label = "C" + coreIndex.ToString(CultureInfo.InvariantCulture);
         string value = tempC < 0 ? "-" : tempC.ToString(CultureInfo.InvariantCulture) + "°";
-        Color valueColor = tempC < 0 ? TextFaint : tempC <= 84 ? Accent : tempC <= 96 ? WarnAccent : HotAccent;
-
-        using var labelBrush = new SolidBrush(TextMuted);
-        using var valueBrush = new SolidBrush(valueColor);
+        SolidBrush valueBrush = tempC < 0 ? TextFaintBrush : tempC <= 84 ? AccentBrush : tempC <= 96 ? WarnAccentBrush : HotAccentBrush;
 
         SizeF labelSize = g.MeasureString(label, SmallFont);
         SizeF valueSize = g.MeasureString(value, SmallFont);
@@ -518,23 +523,16 @@ internal sealed class DashboardForm : Form
         float startX = rect.X + (rect.Width - totalW) / 2f;
         float textY = rect.Y + (rect.Height - labelSize.Height) / 2f;
 
-        g.DrawString(label, SmallFont, labelBrush, startX, textY);
+        g.DrawString(label, SmallFont, TextMutedBrush, startX, textY);
         g.DrawString(value, SmallFont, valueBrush, startX + labelSize.Width + 6f, textY);
     }
 
     private float DrawFanSection(Graphics g, float y)
     {
-        using var mutedBrush = new SolidBrush(TextMuted);
-        g.DrawString("fan mode", LineFont, mutedBrush, ContentLeft, y);
+        g.DrawString("fan mode", LineFont, TextMutedBrush, ContentLeft, y);
         y += LabelBlockHeight;
 
         float x = ContentLeft;
-        using var activeFill = new SolidBrush(Accent);
-        using var activeText = new SolidBrush(AccentText);
-        using var idleEdge = new Pen(PillEdge, 1f);
-        using var idleText = new SolidBrush(TextMuted);
-        using var warnFill = new SolidBrush(WarnAccent);
-        using var warnEdge = new Pen(WarnAccent, 1.4f);
 
         foreach (FanSelection sel in new[]
                  {
@@ -555,11 +553,11 @@ internal sealed class DashboardForm : Form
 
             bool active = _currentSelection == sel;
             if (active)
-                g.FillPath(isFullSpeed ? warnFill : activeFill, path);
+                g.FillPath(isFullSpeed ? WarnAccentBrush : AccentBrush, path);
             else
-                g.DrawPath(isFullSpeed ? warnEdge : idleEdge, path);
+                g.DrawPath(isFullSpeed ? FullSpeedEdgePen : PillEdgePen, path);
 
-            Brush textBrush = active ? activeText : idleText;
+            Brush textBrush = active ? AccentTextBrush : TextMutedBrush;
             g.DrawString(label, font, textBrush,
                 rect.X + (rect.Width - size.Width) / 2f,
                 rect.Y + (rect.Height - size.Height) / 2f + 0.5f);
@@ -581,17 +579,14 @@ internal sealed class DashboardForm : Form
     private float DrawRestartBanner(Graphics g, float y)
     {
         var rect = new RectangleF(ContentLeft, y, ContentRight - ContentLeft, RestartBannerHeight);
-        using var fill = new SolidBrush(Color.FromArgb(30, WarnAccent));
-        using var edge = new Pen(Color.FromArgb(90, WarnAccent), 1f);
         using var path = RoundedRect(rect, 10f);
-        g.FillPath(fill, path);
-        g.DrawPath(edge, path);
+        g.FillPath(BannerFillBrush, path);
+        g.DrawPath(BannerEdgePen, path);
 
         // The banner only ever shows while entering Full Speed (leaving is live).
         string message = "Full speed applies after a restart";
-        using var textBrush = new SolidBrush(TextPrimary);
         SizeF textSize = g.MeasureString(message, LineFont);
-        g.DrawString(message, LineFont, textBrush, rect.X + 16f, rect.Y + (rect.Height - textSize.Height) / 2f);
+        g.DrawString(message, LineFont, TextPrimaryBrush, rect.X + 16f, rect.Y + (rect.Height - textSize.Height) / 2f);
 
         const string pillLabel = "Restart now";
         SizeF pillSize = g.MeasureString(pillLabel, PillFont);
@@ -599,10 +594,8 @@ internal sealed class DashboardForm : Form
         const float pillH = 30f;
         var pillRect = new RectangleF(rect.Right - pillW - 12f, rect.Y + (rect.Height - pillH) / 2f, pillW, pillH);
         using var pillPath = RoundedRect(pillRect, pillH / 2f);
-        using var pillFill = new SolidBrush(WarnAccent);
-        using var pillText = new SolidBrush(AccentText);
-        g.FillPath(pillFill, pillPath);
-        g.DrawString(pillLabel, PillFont, pillText,
+        g.FillPath(WarnAccentBrush, pillPath);
+        g.DrawString(pillLabel, PillFont, AccentTextBrush,
             pillRect.X + (pillRect.Width - pillSize.Width) / 2f,
             pillRect.Y + (pillRect.Height - pillSize.Height) / 2f + 0.5f);
 
@@ -619,18 +612,16 @@ internal sealed class DashboardForm : Form
         var rect = new RectangleF(ContentLeft, y, w, h);
         using var path = RoundedRect(rect, h / 2f);
 
-        using var edge = new Pen(PillEdge, 1f);
-        using var fill = new SolidBrush(Accent);
         if (_autostartEnabled)
-            g.FillPath(fill, path);
+            g.FillPath(AccentBrush, path);
         else
-            g.DrawPath(edge, path);
+            g.DrawPath(PillEdgePen, path);
 
         string mark = _autostartEnabled ? "✓" : "○";
-        using var markBrush = new SolidBrush(_autostartEnabled ? AccentText : TextMuted);
+        SolidBrush markBrush = _autostartEnabled ? AccentTextBrush : TextMutedBrush;
         g.DrawString(mark, PillFont, markBrush, rect.X + 14f, rect.Y + (rect.Height - size.Height) / 2f);
 
-        using var textBrush = new SolidBrush(_autostartEnabled ? AccentText : TextMuted);
+        SolidBrush textBrush = _autostartEnabled ? AccentTextBrush : TextMutedBrush;
         g.DrawString(label, PillFont, textBrush, rect.X + 34f, rect.Y + (rect.Height - size.Height) / 2f);
 
         _autostartRect = rect;

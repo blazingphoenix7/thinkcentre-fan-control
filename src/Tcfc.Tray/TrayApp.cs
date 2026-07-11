@@ -24,6 +24,8 @@ internal sealed class TrayApp : ApplicationContext
     private readonly ToolStripMenuItem[] _modeItems;
     private readonly ToolStripMenuItem _autostartItem;
     private DashboardForm? _dashboard;
+    private int _ticks;
+    private bool _trimmed;
 
     public TrayApp()
     {
@@ -95,7 +97,7 @@ internal sealed class TrayApp : ApplicationContext
         _menu.Items.Add(_autostartItem);
         _menu.Items.Add(exitItem);
         // Re-query the scheduled task on every open: it can change behind our back.
-        _menu.Opening += (_, _) => _autostartItem.Checked = Autostart.IsEnabled();
+        _menu.Opening += (_, _) => OnMenuOpening();
 
         _fanIcon = CreateFanIcon();
         _notifyIcon = new NotifyIcon
@@ -107,36 +109,70 @@ internal sealed class TrayApp : ApplicationContext
         };
         _notifyIcon.DoubleClick += (_, _) => ShowDashboard();
 
-        _timer = new System.Windows.Forms.Timer { Interval = 1000 };
-        _timer.Tick += (_, _) => UpdateReadings();
+        // 2s is plenty for a tooltip nobody watches continuously, and it halves
+        // the idle wakeups versus 1s.
+        _timer = new System.Windows.Forms.Timer { Interval = 2000 };
+        _timer.Tick += (_, _) => OnTick();
         if (_ec is not null)
         {
-            UpdateReadings(); // first reading now, not one second from now
+            UpdateTooltip(); // first reading now, not one interval from now
             _timer.Start();
         }
     }
 
-    private void UpdateReadings()
+    // The timer only refreshes the tooltip, which is one cheap RPM read (2 EC
+    // bytes). The 15-read temperature block feeds the menu header, so it is read
+    // only when the menu actually opens - see OnMenuOpening - not every tick.
+    private void OnTick()
+    {
+        UpdateTooltip();
+
+        // Hand the startup working set back to the OS once things have settled
+        // (JIT, module init). One-shot, a few ticks in.
+        if (!_trimmed && ++_ticks >= 4)
+        {
+            _trimmed = true;
+            TrimWorkingSet();
+        }
+    }
+
+    private void UpdateTooltip()
     {
         if (_ec is null)
             return;
 
         try
         {
-            // -1 = no reading this tick (EC lock or handshake timeout)
-            int rpm = _ec.Rpm();
-            string rpmText = rpm < 0 ? "-" : rpm.ToString();
-
-            // "hottest sensor", not "CPU": the sensor-to-component mapping is
-            // unverified (docs/research/temp-labeling.md)
-            int? hottest = TempSummary.Representative(_ec.Temps());
-
-            _notifyIcon.Text = $"{rpmText} RPM";
-            _header.Text = $"RPM {rpmText}  |  hottest sensor {hottest?.ToString() ?? "-"} C";
+            int rpm = _ec.Rpm(); // -1 = no reading (EC lock or handshake timeout)
+            _notifyIcon.Text = rpm < 0 ? "- RPM" : $"{rpm} RPM";
         }
         catch
         {
             // keep the tray alive; next tick retries
+        }
+    }
+
+    // Refreshes the menu header's RPM + hottest-sensor line and the autostart
+    // check. Only runs when the menu is opening, since it reads the whole
+    // temperature block on top of the RPM.
+    private void OnMenuOpening()
+    {
+        _autostartItem.Checked = Autostart.IsEnabled();
+        if (_ec is null)
+            return;
+
+        try
+        {
+            int rpm = _ec.Rpm();
+            string rpmText = rpm < 0 ? "-" : rpm.ToString();
+            // "hottest sensor", not "CPU": the sensor-to-component mapping is
+            // unverified (docs/research/temp-labeling.md)
+            int? hottest = TempSummary.Representative(_ec.Temps());
+            _header.Text = $"RPM {rpmText}  |  hottest sensor {hottest?.ToString() ?? "-"} C";
+        }
+        catch
+        {
+            // leave the last header; the next open retries
         }
     }
 
@@ -218,7 +254,17 @@ internal sealed class TrayApp : ApplicationContext
     // across opens so the RPM history chart keeps rolling in the background.
     private void ShowDashboard()
     {
-        _dashboard ??= new DashboardForm(_ec, _cpu);
+        if (_dashboard is null)
+        {
+            _dashboard = new DashboardForm(_ec, _cpu);
+            // When the window is closed back to the tray, hand its paint-time
+            // working set back to the OS.
+            _dashboard.VisibleChanged += (_, _) =>
+            {
+                if (_dashboard is { Visible: false })
+                    TrimWorkingSet();
+            };
+        }
         if (!_dashboard.Visible)
             _dashboard.Show();
         _dashboard.Activate();
@@ -296,4 +342,26 @@ internal sealed class TrayApp : ApplicationContext
 
     [DllImport("user32.dll")]
     private static extern bool DestroyIcon(IntPtr hIcon);
+
+    // Hand pages we no longer need back to the OS. Safe and cheap: trimmed pages
+    // fault back in on demand, and this tray is idle almost all of the time.
+    private static void TrimWorkingSet()
+    {
+        try
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            SetProcessWorkingSetSize(GetCurrentProcess(), new IntPtr(-1), new IntPtr(-1));
+        }
+        catch
+        {
+            // best effort - trimming is an optimization, never a requirement
+        }
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr GetCurrentProcess();
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetProcessWorkingSetSize(IntPtr process, IntPtr minimum, IntPtr maximum);
 }

@@ -7,6 +7,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
+    <!-- Efficiency: this tray sits resident 24/7. Skip loading the ICU
+         globalization tables (the UI is invariant-culture only) and drop the
+         background GC thread - the app allocates almost nothing at idle. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+
     <!-- Elevation: EC access through PawnIO requires an admin token. -->
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
