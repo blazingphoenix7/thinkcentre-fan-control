@@ -8,11 +8,10 @@ using Tcfc.Core;
 namespace Tcfc.Tray;
 
 /// <summary>
-/// The main dashboard window: a live, interactive rendering of the README
-/// monitor card (<see cref="Tcfc.Capture.CardRenderer"/>) plus per-core CPU
-/// temps, a fan-mode selector, and a restart banner for the BIOS-gated Full
-/// Speed setting. Custom-painted, no child controls; clickable regions are
-/// plain hit-tested rectangles recorded during <see cref="OnPaint"/>.
+/// The main dashboard window: a live, interactive control panel with per-core
+/// CPU temps, a fan-mode selector, and a restart banner for the BIOS-gated
+/// Full Speed setting. Custom-painted, no child controls; clickable regions
+/// are plain hit-tested rectangles recorded during <see cref="OnPaint"/>.
 ///
 /// Ownership: does not own or dispose <c>ec</c> or <c>cpu</c>. The tray creates
 /// both (alongside its own EcReader) and disposes them in its own Dispose;
@@ -21,86 +20,139 @@ namespace Tcfc.Tray;
 /// </summary>
 internal sealed class DashboardForm : Form
 {
-    // ---- palette / fonts, copied from CardRenderer so the window matches the
-    // approved card look exactly. ----
-    private static readonly Color PageBg = Color.FromArgb(19, 21, 26);
-    private static readonly Color PanelBg = Color.FromArgb(27, 30, 36);
-    private static readonly Color PanelEdge = Color.FromArgb(44, 49, 60);
-    private static readonly Color TextPrimary = Color.FromArgb(232, 236, 244);
-    private static readonly Color TextMuted = Color.FromArgb(139, 147, 164);
-    private static readonly Color TextFaint = Color.FromArgb(94, 101, 118);
-    private static readonly Color Accent = Color.FromArgb(63, 214, 198);
-    private static readonly Color AccentText = Color.FromArgb(10, 34, 30);
-    private static readonly Color GridLine = Color.FromArgb(38, 43, 53);
-    private static readonly Color PillEdge = Color.FromArgb(56, 63, 78);
+    // ---- palette: the approved flat "bone + orange" look. One accent, used
+    // for anything live/active/hot; everything else is ink, muted or rule. ----
+    private static readonly Color Paper = Color.FromArgb(234, 230, 219);
+    private static readonly Color Ink = Color.FromArgb(24, 21, 16);
+    private static readonly Color Muted = Color.FromArgb(140, 133, 122);
+    private static readonly Color Rule = Color.FromArgb(211, 205, 191);
+    private static readonly Color Accent = Color.FromArgb(255, 87, 34);
+    private static readonly Color BarCool = Color.FromArgb(127, 138, 144);
+    private static readonly Color BarWarm = Color.FromArgb(213, 148, 43);
+    private static readonly Color KeyInactiveBg = Color.FromArgb(226, 221, 209);
+    private static readonly Color KeyInactiveText = Color.FromArgb(111, 105, 93);
+    private static readonly Color White = Color.FromArgb(255, 255, 255);
 
-    // Dashboard-only additions: the warm "this is the powerful/gated one" tone
-    // (Full Speed pill, restart banner) and the two hot per-core temp bands.
-    private static readonly Color WarnAccent = Color.FromArgb(230, 170, 70);
-    private static readonly Color HotAccent = Color.FromArgb(232, 90, 90);
+    // Bahnschrift for the hero figure and every instrument label; Cascadia
+    // Mono for every live figure (temps, core ids, the stamp, the live tag).
+    // Named static instances (not synthetic FontStyle.Bold) so the weight is
+    // the font's real drawn weight, not GDI's embolden.
+    private static readonly Font HeroFont = new("Bahnschrift SemiBold", 92f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font KickerFont = new("Bahnschrift SemiBold", 12.5f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font StatusFont = new("Bahnschrift SemiBold", 11.5f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font HeroUnitFont = new("Bahnschrift", 12f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font LabelFont = new("Bahnschrift SemiBold", 10.5f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font ToggleFont = new("Bahnschrift SemiBold", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font BannerFont = new("Bahnschrift SemiBold", 12f, FontStyle.Regular, GraphicsUnit.Pixel);
 
-    private static readonly Font TitleFont = new("Segoe UI", 14f, FontStyle.Regular, GraphicsUnit.Pixel);
-    private static readonly Font NumberFont = new("Segoe UI", 76f, FontStyle.Bold, GraphicsUnit.Pixel);
-    private static readonly Font UnitFont = new("Segoe UI", 18f, FontStyle.Bold, GraphicsUnit.Pixel);
-    private static readonly Font LineFont = new("Segoe UI", 16f, FontStyle.Regular, GraphicsUnit.Pixel);
-    private static readonly Font PillFont = new("Segoe UI", 13f, FontStyle.Regular, GraphicsUnit.Pixel);
-    private static readonly Font PillFontBold = new("Segoe UI", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
-    private static readonly Font SmallFont = new("Segoe UI", 11f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font CoreNumFont = new("Cascadia Mono", 13f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font CoreNumHotFont = new("Cascadia Mono", 13f, FontStyle.Bold, GraphicsUnit.Pixel);
+    private static readonly Font CoreIdFont = new("Cascadia Mono", 10f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font LiveTagFont = new("Cascadia Mono", 9f, FontStyle.Regular, GraphicsUnit.Pixel);
+    private static readonly Font StampFont = new("Cascadia Mono", 9.5f, FontStyle.Regular, GraphicsUnit.Pixel);
 
     // Cached for the same reason as the fonts above: OnPaint runs repeatedly
     // while the window is visible, so these are built once instead of per frame.
-    private static readonly SolidBrush PanelBgBrush = new(PanelBg);
-    private static readonly SolidBrush TextPrimaryBrush = new(TextPrimary);
-    private static readonly SolidBrush TextMutedBrush = new(TextMuted);
-    private static readonly SolidBrush TextFaintBrush = new(TextFaint);
+    private static readonly SolidBrush InkBrush = new(Ink);
+    private static readonly SolidBrush MutedBrush = new(Muted);
     private static readonly SolidBrush AccentBrush = new(Accent);
-    private static readonly SolidBrush AccentTextBrush = new(AccentText);
-    private static readonly SolidBrush WarnAccentBrush = new(WarnAccent);
-    private static readonly SolidBrush HotAccentBrush = new(HotAccent);
-    private static readonly SolidBrush ChartUnderFillBrush = new(Color.FromArgb(26, Accent));
-    private static readonly SolidBrush ChartHaloBrush = new(Color.FromArgb(70, Accent));
-    private static readonly SolidBrush BannerFillBrush = new(Color.FromArgb(30, WarnAccent));
+    private static readonly SolidBrush WhiteBrush = new(White);
+    private static readonly SolidBrush BarCoolBrush = new(BarCool);
+    private static readonly SolidBrush BarWarmBrush = new(BarWarm);
+    private static readonly SolidBrush KeyInactiveBgBrush = new(KeyInactiveBg);
+    private static readonly SolidBrush KeyInactiveTextBrush = new(KeyInactiveText);
+    private static readonly SolidBrush RestartBannerFillBrush = new(Color.FromArgb(26, Accent));
 
-    private static readonly Pen PanelEdgePen = new(PanelEdge, 1f);
-    private static readonly Pen GridLinePen = new(GridLine, 1f);
-    private static readonly Pen PillEdgePen = new(PillEdge, 1f);
-    private static readonly Pen ChartLinePen = new(Accent, 2.2f)
+    private static readonly Pen RulePen = new(Rule, 1f);
+    private static readonly Pen KeyBorderPen = new(Rule, 1.5f);
+    private static readonly Pen RestartBannerBorderPen = new(Accent, 1.25f);
+    private static readonly Pen SparklinePen = new(Ink, 1.6f)
     {
         StartCap = LineCap.Round,
         EndCap = LineCap.Round,
         LineJoin = LineJoin.Round,
     };
-    private static readonly Pen FullSpeedEdgePen = new(WarnAccent, 1.4f);
-    private static readonly Pen BannerEdgePen = new(Color.FromArgb(90, WarnAccent), 1f);
 
-    private static readonly RectangleF ChartRect = new(320f, 88f, 396f, 200f);
+    // GDI+ has no letter-spacing primitive. Tracked (uppercase, wide-set)
+    // labels are drawn one glyph at a time with a fixed advance added after
+    // each one; GenericTypographic gives tight, predictable glyph metrics for
+    // that. A lone space is never measured through the font - MeasureString on
+    // a single space is unreliable across families - it gets a fixed fraction
+    // of the em size instead.
+    private static readonly StringFormat TightFormat = new(StringFormat.GenericTypographic);
 
-    private const int FormWidth = 760;
-    // Logical zoom at 96 DPI. The real paint-time scale is this times the monitor's
-    // DPI ratio (see EffScale), so the window is a consistent physical size on any
-    // display. Raise this to grow the whole dashboard everywhere.
-    private const float UiScale = 1.3f;
-    private const float ContentLeft = 44f;
-    private const float ContentRight = FormWidth - ContentLeft;
-    private const int HistoryCapacity = 60; // matches CardRenderer.HistorySlots
+    private const int FormWidth = 440;
+    // Logical zoom at 96 DPI; the real paint-time scale is this times the
+    // monitor's DPI ratio (see EffScale), so the window is a consistent
+    // physical size on any display. Raise this to grow the whole dashboard
+    // everywhere; 1 keeps the window at the approved ~440-logical-wide size.
+    private const float UiScale = 1f;
 
-    private const int CoresPerRow = 5;
-    private const float CoreCellWidth = 118f;
-    private const float CoreCellHeight = 32f;
-    private const float CoreCellGapX = 10f;
-    private const float CoreCellGapY = 8f;
+    private const float PadX = 26f;
+    private const float PadTop = 26f;
+    private const float PadBottom = 22f;
+    private const float ContentLeft = PadX;
+    private const float ContentRight = FormWidth - PadX;
+    private const float ContentWidth = ContentRight - ContentLeft;
 
-    private const float CpuSectionY = 328f;   // first Y below the RPM figure / chart row
-    private const float LabelBlockHeight = 28f;
-    private const float SectionGap = 20f;
-    private const float FanPillHeight = 36f;
-    private const float FullSpeedExtra = 6f;  // Full Speed pill is a touch taller - the emphasis option
-    private const float RestartBannerHeight = 48f;
-    private const float AutostartHeight = 32f;
-    private const float BottomMargin = 30f;
+    private const float HeaderH = 16f;
+    private const float HeaderDotSize = 9f;
+    private const float HeaderDotGap = 7f;
 
-    private const int MinFormHeight = 420;
-    private const int MaxFormHeight = 900;
+    private const float HeroTopMargin = 14f;
+    private const float HeroBlockHeight = 104f;
+    private const float HeroBottomMargin = 8f;
+    private const float HeroRightPad = 6f;
+    private const float SparkWidth = 96f;
+    private const float SparkHeight = 30f;
+    private const float SparkToLiveGap = 3f;
+    private const float UnitToSparkGap = 6f;
+    private const float SparkDotRadius = 2.6f;
+
+    private const float SectionTopMargin = 20f;
+    private const float SectionLabelHeight = 14f;
+    private const float SectionBottomMargin = 12f;
+
+    private const float GraphHeight = 138f;
+    private const float UnavailableGraphHeight = 40f;
+    private const float CoreColumnGap = 6f;
+    private const float CoreBarMaxWidth = 24f;
+    private const float CoreBarRadius = 3f;
+    private const float CoreNumGap = 7f;
+    private const float CoreIdGap = 9f;
+    private const float BarMinTemp = 40f;
+    private const float BarTempSpan = 60f;
+    private const int WarmThreshold = 89;
+    private const int HotThreshold = 93;
+
+    private const float KeyHeight = 40f;
+    private const float KeyGap = 7f;
+    private const float KeyRadius = 9f;
+
+    private const float RestartBannerGap = 14f;
+    private const float RestartBannerHeight = 52f;
+    private const float BannerRadius = 10f;
+    private const float BannerPadX = 16f;
+    private const float BannerPillPadX = 14f;
+    private const float BannerPillMarginY = 8f;
+
+    private const float FooterTopMargin = 18f;
+    private const float FooterRuleGap = 16f;
+    private const float FooterH = 30f;
+    private const float ToggleGap = 9f;
+
+    private const float KickerTracking = 2.5f;
+    private const float StatusTracking = 1.38f;
+    private const float UnitTracking = 4.08f;
+    private const float SectionTracking = 2.52f;
+    private const float ToggleTracking = 1.1f;
+    private const float LiveTracking = 1.26f;
+    private const float BannerTracking = 1.4f;
+
+    private const int HistoryCapacity = 60;
+
+    private const int MinFormHeight = 380;
+    private const int MaxFormHeight = 650;
 
     private const int DwmwaUseImmersiveDarkMode = 20;
 
@@ -109,10 +161,11 @@ internal sealed class DashboardForm : Form
 
     private readonly EcReader? _ec;
     private readonly CpuTemps? _cpu;
+    private readonly bool _cpuAvailable;
+    private readonly int _coreCount; // sized from Environment.ProcessorCount, not a live PawnIO read
     private readonly System.Windows.Forms.Timer _timer;
     private readonly Queue<int> _history = new();
-    private readonly int _coreRows; // sized from Environment.ProcessorCount, not a live PawnIO read
-    private int _baseHeight; // unscaled content height; ClientSize is this * UiScale (grows when the banner shows)
+    private int _baseHeight; // unscaled content height; ClientSize is this * EffScale (grows when the banner shows)
 
     private int _lastRpm = -1;
     private int[]? _lastCoreTemps;
@@ -124,29 +177,28 @@ internal sealed class DashboardForm : Form
     private bool _restartPending; // drives the banner and the window's extra height
 
     // Hit-test rectangles, recorded fresh on every OnPaint.
-    private RectangleF _quietPillRect;
-    private RectangleF _balancedPillRect;
-    private RectangleF _performancePillRect;
-    private RectangleF _fullSpeedPillRect;
+    private RectangleF _quietKeyRect;
+    private RectangleF _balancedKeyRect;
+    private RectangleF _performanceKeyRect;
+    private RectangleF _fullSpeedKeyRect;
     private RectangleF _restartNowRect;
-    private RectangleF _autostartRect;
+    private RectangleF _autostartToggleRect;
 
     public DashboardForm(EcReader? ec, CpuTemps? cpu)
     {
         _ec = ec;
         _cpu = cpu;
-
-        int coreCount = _cpu is not null ? Environment.ProcessorCount : 0;
-        _coreRows = Math.Max(1, (coreCount + CoresPerRow - 1) / CoresPerRow);
+        _cpuAvailable = _cpu is not null;
+        _coreCount = _cpuAvailable ? Environment.ProcessorCount : 0;
 
         Text = "ThinkCentre Fan Control";
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        BackColor = PageBg;
+        BackColor = Paper;
         DoubleBuffered = true;
         AutoScaleMode = AutoScaleMode.None; // we do all DPI scaling ourselves via EffScale
-        _baseHeight = ComputeHeight(_coreRows, withBanner: false);
+        _baseHeight = ComputeHeight(_cpuAvailable, withBanner: false);
         ApplyClientSize();
 
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
@@ -155,23 +207,23 @@ internal sealed class DashboardForm : Form
         RefreshCachedState();
     }
 
-    // Mirrors the OnPaint layout cursor. The restart-banner row is only counted
-    // when the banner is actually showing, so there is no dead space under the
-    // window in the common (no-restart-pending) state; DoTick regrows it if a
-    // restart becomes pending.
-    private static int ComputeHeight(int coreRows, bool withBanner)
+    // Mirrors the OnPaint layout cursor below - keep the two in sync. The
+    // restart-banner row is only counted when the banner is actually showing,
+    // so there is no dead space under the window in the common (no-restart-
+    // pending) state; DoTick regrows it if a restart becomes pending.
+    private static int ComputeHeight(bool cpuAvailable, bool withBanner)
     {
-        float y = CpuSectionY;
-        y += LabelBlockHeight;
-        y += coreRows * (CoreCellHeight + CoreCellGapY);
-        y += SectionGap;
-        y += LabelBlockHeight;
-        y += FanPillHeight + FullSpeedExtra;
-        y += SectionGap;
+        float y = PadTop;
+        y += HeaderH;
+        y += HeroTopMargin + HeroBlockHeight + HeroBottomMargin;
+        y += SectionTopMargin + SectionLabelHeight + SectionBottomMargin; // CORES / degC
+        y += cpuAvailable ? GraphHeight : UnavailableGraphHeight;
+        y += SectionTopMargin + SectionLabelHeight + SectionBottomMargin; // MODE / hint
+        y += KeyHeight;
         if (withBanner)
-            y += RestartBannerHeight + SectionGap;
-        y += AutostartHeight;
-        y += BottomMargin;
+            y += RestartBannerGap + RestartBannerHeight;
+        y += FooterTopMargin + FooterRuleGap + FooterH;
+        y += PadBottom;
         return (int)Math.Clamp(y, MinFormHeight, MaxFormHeight);
     }
 
@@ -191,8 +243,8 @@ internal sealed class DashboardForm : Form
         base.OnHandleCreated(e);
         try
         {
-            int useDark = 1;
-            DwmSetWindowAttribute(Handle, DwmwaUseImmersiveDarkMode, ref useDark, sizeof(int));
+            int useImmersiveDarkMode = 0; // flat paper theme now - force the light title bar, not dark
+            DwmSetWindowAttribute(Handle, DwmwaUseImmersiveDarkMode, ref useImmersiveDarkMode, sizeof(int));
         }
         catch
         {
@@ -271,7 +323,7 @@ internal sealed class DashboardForm : Form
         if (pending != _restartPending)
         {
             _restartPending = pending;
-            _baseHeight = ComputeHeight(_coreRows, pending);
+            _baseHeight = ComputeHeight(_cpuAvailable, pending);
             ApplyClientSize();
         }
 
@@ -322,309 +374,345 @@ internal sealed class DashboardForm : Form
         g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
-        g.Clear(PageBg);
+        g.Clear(Paper);
         g.ScaleTransform(EffScale, EffScale); // draw in logical units; scaled by zoom * monitor DPI
-        DrawPanel(g);
-        DrawTitle(g);
-        DrawRpmFigure(g, _lastRpm);
-        DrawChart(g, _history.ToArray());
 
-        float y = DrawCpuSection(g, CpuSectionY, _lastCoreTemps, _tjmax);
-        y = DrawFanSection(g, y);
+        float y = PadTop;
+        y = DrawHeader(g, y);
+        y += HeroTopMargin;
+        y = DrawHero(g, y, _lastRpm, _history.ToArray());
+        y += HeroBottomMargin;
+
+        y += SectionTopMargin;
+        DrawSectionLabel(g, y, "CORES", "°C");
+        y += SectionLabelHeight + SectionBottomMargin;
+        y = DrawCoreGraph(g, y);
+
+        y += SectionTopMargin;
+        DrawSectionLabel(g, y, "MODE", _restartPending ? "" : "· RESTART APPLIES FULL SPEED");
+        y += SectionLabelHeight + SectionBottomMargin;
+        y = DrawModeKeys(g, y);
 
         if (_restartPending)
+        {
+            y += RestartBannerGap;
             y = DrawRestartBanner(g, y);
+        }
         else
+        {
             _restartNowRect = RectangleF.Empty;
+        }
 
-        DrawAutostartSection(g, y);
+        y += FooterTopMargin;
+        DrawFooter(g, y);
     }
 
-    private void DrawPanel(Graphics g)
+    // ---- drawing, top to bottom ----
+
+    private float DrawHeader(Graphics g, float y)
     {
-        var rect = new RectangleF(18f, 18f, FormWidth - 36f, _baseHeight - 36f);
-        using var path = RoundedRect(rect, 16f);
-        g.FillPath(PanelBgBrush, path);
-        g.DrawPath(PanelEdgePen, path);
+        DrawTracked(g, "FAN CONTROL", KickerFont, InkBrush, ContentLeft, y, KickerTracking);
+
+        string statusLabel = _currentSelection.HasValue ? LabelFor(_currentSelection.Value) : "UNKNOWN";
+        Brush statusBrush = _currentSelection.HasValue ? AccentBrush : MutedBrush;
+
+        float statusW = MeasureTracked(g, statusLabel, StatusFont, StatusTracking);
+        float statusX = ContentRight - statusW;
+        float dotX = statusX - HeaderDotGap - HeaderDotSize;
+        SizeF statusLine = g.MeasureString(statusLabel, StatusFont);
+        float dotY = y + (statusLine.Height - HeaderDotSize) / 2f;
+
+        g.FillEllipse(statusBrush, dotX, dotY, HeaderDotSize, HeaderDotSize);
+        DrawTracked(g, statusLabel, StatusFont, statusBrush, statusX, y, StatusTracking);
+
+        return y + HeaderH;
     }
 
-    // ---- drawing: card-identical pieces (panel/title/RPM figure/chart) ----
-
-    private void DrawTitle(Graphics g)
-    {
-        g.DrawString("ThinkCentre Fan Control · desktop", TitleFont, TextMutedBrush, 42f, 38f);
-    }
-
-    private static void DrawRpmFigure(Graphics g, int rpm)
+    private static float DrawHero(Graphics g, float y, int rpm, int[] history)
     {
         bool available = rpm >= 0;
         string figure = available ? rpm.ToString(CultureInfo.InvariantCulture) : "-";
+        Brush figureBrush = available ? InkBrush : MutedBrush;
 
-        SolidBrush figureBrush = available ? AccentBrush : TextMutedBrush;
+        float figBottom = y + HeroBlockHeight;
+        SizeF figSize = g.MeasureString(figure, HeroFont);
+        g.DrawString(figure, HeroFont, figureBrush, ContentLeft, figBottom - figSize.Height);
 
-        const float x = 36f;
-        const float y = 64f;
-        SizeF figureSize = g.MeasureString(figure, NumberFont);
-        g.DrawString(figure, NumberFont, figureBrush, x, y);
+        // Right-hand stack (unit label / sparkline / "live" tag), bottom-anchored
+        // against the hero figure the same way the approved layout is.
+        float stackBottom = figBottom - HeroRightPad;
 
-        SizeF unitSize = g.MeasureString("RPM", UnitFont);
-        g.DrawString("RPM", UnitFont, TextMutedBrush,
-            x + figureSize.Width - 8f,
-            y + figureSize.Height - unitSize.Height - 16f);
+        const string liveTag = "live";
+        SizeF liveSize = g.MeasureString(liveTag, LiveTagFont);
+        float liveW = MeasureTracked(g, liveTag, LiveTagFont, LiveTracking);
+        float liveY = stackBottom - liveSize.Height;
+        DrawTracked(g, liveTag, LiveTagFont, MutedBrush, ContentRight - liveW, liveY, LiveTracking);
+
+        float sparkBottom = liveY - SparkToLiveGap;
+        float sparkTop = sparkBottom - SparkHeight;
+        var sparkRect = new RectangleF(ContentRight - SparkWidth, sparkTop, SparkWidth, SparkHeight);
+        DrawSparkline(g, history, sparkRect);
+
+        const string unitLabel = "RPM";
+        SizeF unitSize = g.MeasureString(unitLabel, HeroUnitFont);
+        float unitW = MeasureTracked(g, unitLabel, HeroUnitFont, UnitTracking);
+        float unitY = sparkTop - UnitToSparkGap - unitSize.Height;
+        DrawTracked(g, unitLabel, HeroUnitFont, MutedBrush, ContentRight - unitW, unitY, UnitTracking);
+
+        return figBottom;
     }
 
-    private static void DrawChart(Graphics g, IReadOnlyList<int> history)
+    // A small flat sparkline of the RPM history queue - not the old axis-and-
+    // grid chart, just a line and a dot. Gaps (failed reads, marked -1) are
+    // skipped rather than breaking the line into runs; for a decoration this
+    // small that reads better than a visible hole.
+    private static void DrawSparkline(Graphics g, IReadOnlyList<int> history, RectangleF rect)
     {
-        RectangleF chart = ChartRect;
-
         int lo = int.MaxValue, hi = int.MinValue;
-        for (int i = 0; i < history.Count; i++)
+        foreach (int v in history)
         {
-            int v = history[i];
             if (v < 0)
                 continue;
             if (v < lo) lo = v;
             if (v > hi) hi = v;
         }
-        bool hasData = hi >= lo;
+        if (hi < lo)
+            return; // no samples yet - an empty sparkline beats a fake one
 
-        int scaleLo = 0, scaleHi = 1;
-        if (hasData)
+        // Keep a near-constant reading (full speed barely moves) as a calm,
+        // centred, near-flat line instead of amplifying a few rpm of jitter into
+        // a full-height square wave.
+        const int minSpan = 400;
+        if (hi - lo < minSpan)
         {
-            float pad = Math.Max(25f, (hi - lo) * 0.2f);
-            scaleLo = (int)Math.Floor(Math.Max(0f, lo - pad) / 50f) * 50;
-            scaleHi = (int)Math.Ceiling((hi + pad) / 50f) * 50;
-            if (scaleHi <= scaleLo)
-                scaleHi = scaleLo + 50;
+            int mid = (lo + hi) / 2;
+            lo = mid - minSpan / 2;
+            hi = mid + minSpan / 2;
         }
 
-        int slots = Math.Max(HistoryCapacity, history.Count);
-        float slotW = chart.Width / (slots - 1);
-        g.DrawRectangle(GridLinePen, chart.X, chart.Y, chart.Width, chart.Height);
-        for (int t = 1; t < 4; t++)
+        int n = history.Count;
+        var points = new List<PointF>(n);
+        for (int i = 0; i < n; i++)
         {
-            float gy = chart.Y + chart.Height * t / 4f;
-            g.DrawLine(GridLinePen, chart.X, gy, chart.Right, gy);
-        }
-        for (int s = 10; ; s += 10)
-        {
-            float gx = chart.Right - s * slotW;
-            if (gx <= chart.X + 1f)
-                break;
-            g.DrawLine(GridLinePen, gx, chart.Y, gx, chart.Bottom);
+            if (history[i] < 0)
+                continue;
+            float x = rect.X + (n <= 1 ? 0f : rect.Width * i / (n - 1));
+            float py = rect.Bottom - (history[i] - lo) / (float)(hi - lo) * rect.Height;
+            points.Add(new PointF(x, py));
         }
 
-        if (hasData)
+        if (points.Count >= 2)
+            g.DrawLines(SparklinePen, points.ToArray());
+        if (points.Count >= 1)
         {
-            g.DrawString(scaleHi.ToString(CultureInfo.InvariantCulture), SmallFont, TextFaintBrush, chart.X + 5f, chart.Y + 4f);
-            g.DrawString(scaleLo.ToString(CultureInfo.InvariantCulture), SmallFont, TextFaintBrush, chart.X + 5f, chart.Bottom - 18f);
+            PointF last = points[^1];
+            g.FillEllipse(AccentBrush, last.X - SparkDotRadius, last.Y - SparkDotRadius, SparkDotRadius * 2f, SparkDotRadius * 2f);
         }
-
-        if (hasData)
-        {
-            float XFor(int index) => chart.Right - (history.Count - 1 - index) * slotW;
-            float YFor(int value) =>
-                chart.Bottom - (value - scaleLo) / (float)(scaleHi - scaleLo) * chart.Height;
-
-            var run = new List<PointF>();
-            PointF? newest = null;
-
-            void Flush()
-            {
-                if (run.Count == 0)
-                    return;
-                if (run.Count == 1)
-                {
-                    g.FillEllipse(AccentBrush, run[0].X - 2f, run[0].Y - 2f, 4f, 4f);
-                }
-                else
-                {
-                    var area = new PointF[run.Count + 2];
-                    run.CopyTo(area);
-                    area[run.Count] = new PointF(run[run.Count - 1].X, chart.Bottom);
-                    area[run.Count + 1] = new PointF(run[0].X, chart.Bottom);
-                    g.FillPolygon(ChartUnderFillBrush, area);
-                    g.DrawLines(ChartLinePen, run.ToArray());
-                }
-                newest = run[run.Count - 1];
-                run.Clear();
-            }
-
-            for (int i = 0; i < history.Count; i++)
-            {
-                if (history[i] < 0)
-                {
-                    Flush();
-                    continue;
-                }
-                run.Add(new PointF(XFor(i), YFor(history[i])));
-            }
-            Flush();
-
-            if (newest.HasValue && history[history.Count - 1] >= 0)
-            {
-                g.FillEllipse(ChartHaloBrush, newest.Value.X - 7f, newest.Value.Y - 7f, 14f, 14f);
-                g.FillEllipse(AccentBrush, newest.Value.X - 3.5f, newest.Value.Y - 3.5f, 7f, 7f);
-            }
-        }
-
-        g.DrawString("fan rpm · recent samples", SmallFont, TextFaintBrush, chart.X, chart.Bottom + 8f);
     }
 
-    // ---- drawing: new dashboard rows ----
-
-    private float DrawCpuSection(Graphics g, float y, int[]? coreTemps, int tjmax)
+    private static void DrawSectionLabel(Graphics g, float y, string left, string right)
     {
-        const string label = "cpu cores";
-        g.DrawString(label, LineFont, TextMutedBrush, ContentLeft, y);
+        DrawTracked(g, left, LabelFont, MutedBrush, ContentLeft, y, SectionTracking);
+        if (right.Length == 0)
+            return;
+        float w = MeasureTracked(g, right, LabelFont, SectionTracking);
+        DrawTracked(g, right, LabelFont, MutedBrush, ContentRight - w, y, SectionTracking);
+    }
 
-        if (_cpu is not null && tjmax > 0)
-        {
-            float labelW = g.MeasureString(label, LineFont).Width;
-            g.DrawString($"· Tjmax {tjmax.ToString(CultureInfo.InvariantCulture)}°", SmallFont, TextFaintBrush,
-                ContentLeft + labelW + 10f, y + 5f);
-        }
-        y += LabelBlockHeight;
-
+    private float DrawCoreGraph(Graphics g, float y)
+    {
         if (_cpu is null)
         {
-            g.DrawString("per-core temps unavailable", SmallFont, TextFaintBrush, ContentLeft, y + 6f);
-            return y + CoreCellHeight + CoreCellGapY;
+            DrawTracked(g, "PER-CORE TEMPS UNAVAILABLE", LabelFont, MutedBrush,
+                ContentLeft, y + (UnavailableGraphHeight - SectionLabelHeight) / 2f, SectionTracking);
+            return y + UnavailableGraphHeight;
         }
 
-        int count = Environment.ProcessorCount;
-        for (int i = 0; i < count; i++)
+        float colWidth = (ContentWidth - CoreColumnGap * (_coreCount - 1)) / _coreCount;
+        for (int i = 0; i < _coreCount; i++)
         {
-            int row = i / CoresPerRow;
-            int col = i % CoresPerRow;
-            var rect = new RectangleF(
-                ContentLeft + col * (CoreCellWidth + CoreCellGapX),
-                y + row * (CoreCellHeight + CoreCellGapY),
-                CoreCellWidth, CoreCellHeight);
-            int tempC = coreTemps is not null && i < coreTemps.Length ? coreTemps[i] : -1;
-            DrawCoreCell(g, rect, i, tempC);
+            var col = new RectangleF(ContentLeft + i * (colWidth + CoreColumnGap), y, colWidth, GraphHeight);
+            int tempC = _lastCoreTemps is not null && i < _lastCoreTemps.Length ? _lastCoreTemps[i] : -1;
+            DrawCoreColumn(g, col, i, tempC);
         }
-
-        return y + _coreRows * (CoreCellHeight + CoreCellGapY);
+        return y + GraphHeight;
     }
 
-    private static void DrawCoreCell(Graphics g, RectangleF rect, int coreIndex, int tempC)
+    // Temp number on top, heat-mapped bar in the middle, core id underneath.
+    // All columns share the same bottom edge, so the bars are bottom-aligned
+    // on one baseline and the ids line up in a row regardless of bar height.
+    private static void DrawCoreColumn(Graphics g, RectangleF col, int coreIndex, int tempC)
     {
-        using var path = RoundedRect(rect, 8f);
-        g.DrawPath(PillEdgePen, path);
+        bool hasTemp = tempC >= 0;
+        bool hot = hasTemp && tempC >= HotThreshold;
 
-        string label = "C" + coreIndex.ToString(CultureInfo.InvariantCulture);
-        string value = tempC < 0 ? "-" : tempC.ToString(CultureInfo.InvariantCulture) + "°";
-        SolidBrush valueBrush = tempC < 0 ? TextFaintBrush : tempC <= 84 ? AccentBrush : tempC <= 96 ? WarnAccentBrush : HotAccentBrush;
+        // core id pinned to the shared bottom baseline
+        string idLabel = "C" + coreIndex.ToString(CultureInfo.InvariantCulture);
+        SizeF idSize = g.MeasureString(idLabel, CoreIdFont);
+        float idY = col.Bottom - idSize.Height;
+        g.DrawString(idLabel, CoreIdFont, MutedBrush, col.X + (col.Width - idSize.Width) / 2f, idY);
 
-        SizeF labelSize = g.MeasureString(label, SmallFont);
-        SizeF valueSize = g.MeasureString(value, SmallFont);
-        float totalW = labelSize.Width + 6f + valueSize.Width;
-        float startX = rect.X + (rect.Width - totalW) / 2f;
-        float textY = rect.Y + (rect.Height - labelSize.Height) / 2f;
+        // temperature pinned to the top, so the numbers read as one aligned row
+        string numLabel = hasTemp ? tempC.ToString(CultureInfo.InvariantCulture) : "-";
+        Font numFont = hot ? CoreNumHotFont : CoreNumFont;
+        Brush numBrush = hot ? AccentBrush : hasTemp ? InkBrush : MutedBrush;
+        SizeF numSize = g.MeasureString(numLabel, numFont);
+        float numY = col.Y;
+        g.DrawString(numLabel, numFont, numBrush, col.X + (col.Width - numSize.Width) / 2f, numY);
 
-        g.DrawString(label, SmallFont, TextMutedBrush, startX, textY);
-        g.DrawString(value, SmallFont, valueBrush, startX + labelSize.Width + 6f, textY);
+        // bar fills the framed area between the number row and the id baseline;
+        // its height is the core's fraction of that frame, so cool reads short
+        float barBottom = idY - CoreIdGap;
+        float barAreaTop = numY + numSize.Height + CoreNumGap;
+        float barArea = barBottom - barAreaTop;
+        float frac = hasTemp ? Math.Clamp((tempC - BarMinTemp) / BarTempSpan, 0f, 1f) : 0f;
+        float barHeight = frac * barArea;
+
+        if (barHeight > 0.5f && barArea > 0f)
+        {
+            float barWidth = Math.Min(col.Width, CoreBarMaxWidth);
+            float barX = col.X + (col.Width - barWidth) / 2f;
+            Brush barBrush = !hasTemp ? MutedBrush : HeatBrush(tempC);
+            using var barPath = TopRoundedRect(new RectangleF(barX, barBottom - barHeight, barWidth, barHeight), CoreBarRadius);
+            g.FillPath(barBrush, barPath);
+        }
     }
 
-    private float DrawFanSection(Graphics g, float y)
-    {
-        g.DrawString("fan mode", LineFont, TextMutedBrush, ContentLeft, y);
-        y += LabelBlockHeight;
+    private static Brush HeatBrush(int tempC)
+        => tempC >= HotThreshold ? AccentBrush : tempC >= WarmThreshold ? BarWarmBrush : BarCoolBrush;
 
+    private float DrawModeKeys(Graphics g, float y)
+    {
+        FanSelection[] order = { FanSelection.Quiet, FanSelection.Balanced, FanSelection.Performance, FanSelection.FullSpeed };
+        float keyWidth = (ContentWidth - KeyGap * (order.Length - 1)) / order.Length;
         float x = ContentLeft;
 
-        foreach (FanSelection sel in new[]
-                 {
-                     FanSelection.Quiet, FanSelection.Balanced, FanSelection.Performance, FanSelection.FullSpeed,
-                 })
+        foreach (FanSelection sel in order)
         {
-            bool isFullSpeed = sel == FanSelection.FullSpeed;
-            string label = isFullSpeed ? "Full Speed" : sel.ToString();
-            Font font = isFullSpeed ? PillFontBold : PillFont;
-            float rowH = isFullSpeed ? FanPillHeight + FullSpeedExtra : FanPillHeight;
-            float rowY = isFullSpeed ? y - FullSpeedExtra / 2f : y;
-
-            SizeF size = g.MeasureString(label, font);
-            float w = size.Width + 28f;
-
-            var rect = new RectangleF(x, rowY, w, rowH);
-            using var path = RoundedRect(rect, rowH / 2f);
-
+            var rect = new RectangleF(x, y, keyWidth, KeyHeight);
+            using var path = RoundedRect(rect, KeyRadius);
             bool active = _currentSelection == sel;
             if (active)
-                g.FillPath(isFullSpeed ? WarnAccentBrush : AccentBrush, path);
+            {
+                g.FillPath(AccentBrush, path);
+            }
             else
-                g.DrawPath(isFullSpeed ? FullSpeedEdgePen : PillEdgePen, path);
+            {
+                g.FillPath(KeyInactiveBgBrush, path);
+                g.DrawPath(KeyBorderPen, path);
+            }
 
-            Brush textBrush = active ? AccentTextBrush : TextMutedBrush;
-            g.DrawString(label, font, textBrush,
-                rect.X + (rect.Width - size.Width) / 2f,
-                rect.Y + (rect.Height - size.Height) / 2f + 0.5f);
+            string label = LabelFor(sel);
+            Brush textBrush = active ? WhiteBrush : KeyInactiveTextBrush;
+            SizeF size = g.MeasureString(label, LabelFont);
+            g.DrawString(label, LabelFont, textBrush,
+                x + (keyWidth - size.Width) / 2f,
+                y + (KeyHeight - size.Height) / 2f);
 
             switch (sel)
             {
-                case FanSelection.Quiet: _quietPillRect = rect; break;
-                case FanSelection.Balanced: _balancedPillRect = rect; break;
-                case FanSelection.Performance: _performancePillRect = rect; break;
-                case FanSelection.FullSpeed: _fullSpeedPillRect = rect; break;
+                case FanSelection.Quiet: _quietKeyRect = rect; break;
+                case FanSelection.Balanced: _balancedKeyRect = rect; break;
+                case FanSelection.Performance: _performanceKeyRect = rect; break;
+                case FanSelection.FullSpeed: _fullSpeedKeyRect = rect; break;
             }
 
-            x += w + 10f;
+            x += keyWidth + KeyGap;
         }
 
-        return y + FanPillHeight + FullSpeedExtra + SectionGap;
+        return y + KeyHeight;
     }
+
+    private static string LabelFor(FanSelection sel)
+        => sel == FanSelection.FullSpeed ? "FULL SPEED" : sel.ToString().ToUpperInvariant();
 
     private float DrawRestartBanner(Graphics g, float y)
     {
-        var rect = new RectangleF(ContentLeft, y, ContentRight - ContentLeft, RestartBannerHeight);
-        using var path = RoundedRect(rect, 10f);
-        g.FillPath(BannerFillBrush, path);
-        g.DrawPath(BannerEdgePen, path);
+        var rect = new RectangleF(ContentLeft, y, ContentWidth, RestartBannerHeight);
+        using var path = RoundedRect(rect, BannerRadius);
+        g.FillPath(RestartBannerFillBrush, path);
+        g.DrawPath(RestartBannerBorderPen, path);
 
         // The banner only ever shows while entering Full Speed (leaving is live).
-        string message = "Full speed applies after a restart";
-        SizeF textSize = g.MeasureString(message, LineFont);
-        g.DrawString(message, LineFont, TextPrimaryBrush, rect.X + 16f, rect.Y + (rect.Height - textSize.Height) / 2f);
+        const string message = "RESTART TO APPLY FULL SPEED";
+        SizeF lineSize = g.MeasureString(message, BannerFont);
+        DrawTracked(g, message, BannerFont, InkBrush,
+            rect.X + BannerPadX, rect.Y + (rect.Height - lineSize.Height) / 2f, BannerTracking);
 
-        const string pillLabel = "Restart now";
-        SizeF pillSize = g.MeasureString(pillLabel, PillFont);
-        float pillW = pillSize.Width + 28f;
-        const float pillH = 30f;
-        var pillRect = new RectangleF(rect.Right - pillW - 12f, rect.Y + (rect.Height - pillH) / 2f, pillW, pillH);
+        const string pillLabel = "RESTART NOW";
+        SizeF pillTextSize = g.MeasureString(pillLabel, LabelFont);
+        float pillW = pillTextSize.Width + BannerPillPadX * 2f;
+        float pillH = RestartBannerHeight - BannerPillMarginY * 2f;
+        var pillRect = new RectangleF(rect.Right - pillW - BannerPadX, rect.Y + BannerPillMarginY, pillW, pillH);
         using var pillPath = RoundedRect(pillRect, pillH / 2f);
-        g.FillPath(WarnAccentBrush, pillPath);
-        g.DrawString(pillLabel, PillFont, AccentTextBrush,
-            pillRect.X + (pillRect.Width - pillSize.Width) / 2f,
-            pillRect.Y + (pillRect.Height - pillSize.Height) / 2f + 0.5f);
+        g.FillPath(AccentBrush, pillPath);
+        g.DrawString(pillLabel, LabelFont, WhiteBrush,
+            pillRect.X + (pillRect.Width - pillTextSize.Width) / 2f,
+            pillRect.Y + (pillRect.Height - pillTextSize.Height) / 2f);
 
         _restartNowRect = pillRect;
-        return y + RestartBannerHeight + SectionGap;
+        return y + RestartBannerHeight;
     }
 
-    private void DrawAutostartSection(Graphics g, float y)
+    private void DrawFooter(Graphics g, float y)
     {
-        const string label = "Start with Windows";
-        SizeF size = g.MeasureString(label, PillFont);
-        float w = size.Width + 46f;
-        const float h = AutostartHeight;
-        var rect = new RectangleF(ContentLeft, y, w, h);
-        using var path = RoundedRect(rect, h / 2f);
+        g.DrawLine(RulePen, ContentLeft, y, ContentRight, y);
+        float rowY = y + FooterRuleGap;
+        float rowMid = rowY + FooterH / 2f;
 
-        if (_autostartEnabled)
-            g.FillPath(AccentBrush, path);
-        else
-            g.DrawPath(PillEdgePen, path);
+        const float swW = 30f, swH = 17f;
+        var swRect = new RectangleF(ContentLeft, rowMid - swH / 2f, swW, swH);
+        DrawToggleSwitch(g, swRect, _autostartEnabled);
 
-        string mark = _autostartEnabled ? "✓" : "○";
-        SolidBrush markBrush = _autostartEnabled ? AccentTextBrush : TextMutedBrush;
-        g.DrawString(mark, PillFont, markBrush, rect.X + 14f, rect.Y + (rect.Height - size.Height) / 2f);
+        const string toggleLabel = "START WITH WINDOWS";
+        SizeF toggleSize = g.MeasureString(toggleLabel, ToggleFont);
+        float toggleX = swRect.Right + ToggleGap;
+        DrawTracked(g, toggleLabel, ToggleFont, KeyInactiveTextBrush, toggleX, rowMid - toggleSize.Height / 2f, ToggleTracking);
+        float toggleW = MeasureTracked(g, toggleLabel, ToggleFont, ToggleTracking);
+        _autostartToggleRect = new RectangleF(ContentLeft, rowY, toggleX + toggleW - ContentLeft, FooterH);
 
-        SolidBrush textBrush = _autostartEnabled ? AccentTextBrush : TextMutedBrush;
-        g.DrawString(label, PillFont, textBrush, rect.X + 34f, rect.Y + (rect.Height - size.Height) / 2f);
+        string stamp = "M70t";
+        if (_tjmax > 0)
+            stamp += " · Tjmax " + _tjmax.ToString(CultureInfo.InvariantCulture);
+        SizeF stampSize = g.MeasureString(stamp, StampFont);
+        g.DrawString(stamp, StampFont, MutedBrush, ContentRight - stampSize.Width, rowMid - stampSize.Height / 2f);
+    }
 
-        _autostartRect = rect;
+    private static void DrawToggleSwitch(Graphics g, RectangleF rect, bool on)
+    {
+        using var path = RoundedRect(rect, rect.Height / 2f);
+        g.FillPath(on ? AccentBrush : KeyInactiveBgBrush, path);
+
+        const float knobPad = 2f;
+        float knobD = rect.Height - knobPad * 2f;
+        float knobX = on ? rect.Right - knobPad - knobD : rect.X + knobPad;
+        g.FillEllipse(WhiteBrush, knobX, rect.Y + knobPad, knobD, knobD);
+    }
+
+    // ---- text tracking + geometry helpers ----
+
+    private static float CharWidth(Graphics g, char c, Font font)
+        => c == ' ' ? font.Size * 0.28f : g.MeasureString(c.ToString(), font, int.MaxValue, TightFormat).Width;
+
+    private static float MeasureTracked(Graphics g, string text, Font font, float tracking)
+    {
+        if (text.Length == 0)
+            return 0f;
+        float w = 0f;
+        foreach (char c in text)
+            w += CharWidth(g, c, font);
+        return w + tracking * (text.Length - 1);
+    }
+
+    private static void DrawTracked(Graphics g, string text, Font font, Brush brush, float x, float y, float tracking)
+    {
+        float cx = x;
+        foreach (char c in text)
+        {
+            if (c != ' ')
+                g.DrawString(c.ToString(), font, brush, cx, y, TightFormat);
+            cx += CharWidth(g, c, font) + tracking;
+        }
     }
 
     private static GraphicsPath RoundedRect(RectangleF rect, float radius)
@@ -639,6 +727,18 @@ internal sealed class DashboardForm : Form
         return path;
     }
 
+    // Rounded top corners, square bottom - the core-graph bar shape.
+    private static GraphicsPath TopRoundedRect(RectangleF rect, float radius)
+    {
+        float d = radius * 2f;
+        var path = new GraphicsPath();
+        path.AddArc(rect.X, rect.Y, d, d, 180f, 90f);
+        path.AddArc(rect.Right - d, rect.Y, d, d, 270f, 90f);
+        path.AddLine(rect.Right, rect.Bottom, rect.X, rect.Bottom);
+        path.CloseFigure();
+        return path;
+    }
+
     // ---- interaction ----
 
     protected override void OnMouseClick(MouseEventArgs e)
@@ -646,17 +746,17 @@ internal sealed class DashboardForm : Form
         base.OnMouseClick(e);
         PointF pt = new(e.X / EffScale, e.Y / EffScale);
 
-        if (_quietPillRect.Contains(pt))
+        if (_quietKeyRect.Contains(pt))
             ApplySelection(FanSelection.Quiet);
-        else if (_balancedPillRect.Contains(pt))
+        else if (_balancedKeyRect.Contains(pt))
             ApplySelection(FanSelection.Balanced);
-        else if (_performancePillRect.Contains(pt))
+        else if (_performanceKeyRect.Contains(pt))
             ApplySelection(FanSelection.Performance);
-        else if (_fullSpeedPillRect.Contains(pt))
+        else if (_fullSpeedKeyRect.Contains(pt))
             ConfirmAndApplyFullSpeed();
         else if (!_restartNowRect.IsEmpty && _restartNowRect.Contains(pt))
             ConfirmAndRestart();
-        else if (_autostartRect.Contains(pt))
+        else if (_autostartToggleRect.Contains(pt))
             ToggleAutostart();
     }
 
@@ -665,12 +765,12 @@ internal sealed class DashboardForm : Form
         base.OnMouseMove(e);
         PointF pt = new(e.X / EffScale, e.Y / EffScale);
         bool hovering =
-            _quietPillRect.Contains(pt) ||
-            _balancedPillRect.Contains(pt) ||
-            _performancePillRect.Contains(pt) ||
-            _fullSpeedPillRect.Contains(pt) ||
+            _quietKeyRect.Contains(pt) ||
+            _balancedKeyRect.Contains(pt) ||
+            _performanceKeyRect.Contains(pt) ||
+            _fullSpeedKeyRect.Contains(pt) ||
             (!_restartNowRect.IsEmpty && _restartNowRect.Contains(pt)) ||
-            _autostartRect.Contains(pt);
+            _autostartToggleRect.Contains(pt);
         Cursor = hovering ? Cursors.Hand : Cursors.Default;
     }
 
