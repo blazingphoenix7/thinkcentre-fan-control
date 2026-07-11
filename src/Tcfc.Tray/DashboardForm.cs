@@ -50,6 +50,10 @@ internal sealed class DashboardForm : Form
     private static readonly RectangleF ChartRect = new(320f, 88f, 396f, 200f);
 
     private const int FormWidth = 760;
+    // Logical zoom at 96 DPI. The real paint-time scale is this times the monitor's
+    // DPI ratio (see EffScale), so the window is a consistent physical size on any
+    // display. Raise this to grow the whole dashboard everywhere.
+    private const float UiScale = 1.3f;
     private const float ContentLeft = 44f;
     private const float ContentRight = FormWidth - ContentLeft;
     private const int HistoryCapacity = 60; // matches CardRenderer.HistorySlots
@@ -69,7 +73,7 @@ internal sealed class DashboardForm : Form
     private const float AutostartHeight = 32f;
     private const float BottomMargin = 30f;
 
-    private const int MinFormHeight = 680;
+    private const int MinFormHeight = 420;
     private const int MaxFormHeight = 900;
 
     private const int DwmwaUseImmersiveDarkMode = 20;
@@ -82,6 +86,7 @@ internal sealed class DashboardForm : Form
     private readonly System.Windows.Forms.Timer _timer;
     private readonly Queue<int> _history = new();
     private readonly int _coreRows; // sized from Environment.ProcessorCount, not a live PawnIO read
+    private int _baseHeight; // unscaled content height; ClientSize is this * UiScale (grows when the banner shows)
 
     private int _lastRpm = -1;
     private int[]? _lastCoreTemps;
@@ -89,6 +94,7 @@ internal sealed class DashboardForm : Form
     private FanSelection? _currentSelection; // null until the first successful WMI read
     private bool _biosFullSpeed;
     private bool _autostartEnabled;
+    private bool _restartPending; // drives the banner and the window's extra height
 
     // Hit-test rectangles, recorded fresh on every OnPaint.
     private RectangleF _quietPillRect;
@@ -112,7 +118,9 @@ internal sealed class DashboardForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         BackColor = PageBg;
         DoubleBuffered = true;
-        ClientSize = new Size(FormWidth, ComputeHeight(_coreRows));
+        AutoScaleMode = AutoScaleMode.None; // we do all DPI scaling ourselves via EffScale
+        _baseHeight = ComputeHeight(_coreRows, withBanner: false);
+        ApplyClientSize();
 
         _timer = new System.Windows.Forms.Timer { Interval = 1000 };
         _timer.Tick += DoTick;
@@ -120,10 +128,11 @@ internal sealed class DashboardForm : Form
         RefreshCachedState();
     }
 
-    // Mirrors the OnPaint layout cursor (reserving space for the restart banner
-    // even when it starts out hidden) so the fixed, non-resizable window always
-    // fits its content, whatever the machine's actual core count turns out to be.
-    private static int ComputeHeight(int coreRows)
+    // Mirrors the OnPaint layout cursor. The restart-banner row is only counted
+    // when the banner is actually showing, so there is no dead space under the
+    // window in the common (no-restart-pending) state; DoTick regrows it if a
+    // restart becomes pending.
+    private static int ComputeHeight(int coreRows, bool withBanner)
     {
         float y = CpuSectionY;
         y += LabelBlockHeight;
@@ -132,10 +141,22 @@ internal sealed class DashboardForm : Form
         y += LabelBlockHeight;
         y += FanPillHeight + FullSpeedExtra;
         y += SectionGap;
-        y += RestartBannerHeight + SectionGap;
+        if (withBanner)
+            y += RestartBannerHeight + SectionGap;
         y += AutostartHeight;
         y += BottomMargin;
         return (int)Math.Clamp(y, MinFormHeight, MaxFormHeight);
+    }
+
+    // Total device-pixel zoom: the logical UiScale times the monitor's DPI ratio,
+    // so the window is the same physical size on a 4K/150% display as on a 1080p one.
+    private float EffScale => UiScale * DeviceDpi / 96f;
+
+    private void ApplyClientSize()
+    {
+        ClientSize = new Size(
+            (int)MathF.Round(FormWidth * EffScale),
+            (int)MathF.Round(_baseHeight * EffScale));
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -150,6 +171,9 @@ internal sealed class DashboardForm : Form
         {
             // best effort - older Windows builds don't support this attribute
         }
+
+        // DeviceDpi is only reliable once the handle exists; size to the real DPI now.
+        ApplyClientSize();
     }
 
     protected override void OnVisibleChanged(EventArgs e)
@@ -210,6 +234,16 @@ internal sealed class DashboardForm : Form
             }
         }
 
+        // The restart banner shows only when the BIOS setting and the actual fan
+        // disagree. Grow or shrink the window to fit it, so there is never a gap.
+        bool pending = FanControl.IsRestartPending(_biosFullSpeed, _lastRpm);
+        if (pending != _restartPending)
+        {
+            _restartPending = pending;
+            _baseHeight = ComputeHeight(_coreRows, pending);
+            ApplyClientSize();
+        }
+
         Invalidate();
     }
 
@@ -258,6 +292,7 @@ internal sealed class DashboardForm : Form
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 
         g.Clear(PageBg);
+        g.ScaleTransform(EffScale, EffScale); // draw in logical units; scaled by zoom * monitor DPI
         DrawPanel(g);
         DrawTitle(g);
         DrawRpmFigure(g, _lastRpm);
@@ -266,8 +301,8 @@ internal sealed class DashboardForm : Form
         float y = DrawCpuSection(g, CpuSectionY, _lastCoreTemps, _tjmax);
         y = DrawFanSection(g, y);
 
-        if (FanControl.IsRestartPending(_biosFullSpeed, _lastRpm))
-            y = DrawRestartBanner(g, y, _biosFullSpeed);
+        if (_restartPending)
+            y = DrawRestartBanner(g, y);
         else
             _restartNowRect = RectangleF.Empty;
 
@@ -276,7 +311,7 @@ internal sealed class DashboardForm : Form
 
     private void DrawPanel(Graphics g)
     {
-        var rect = new RectangleF(18f, 18f, FormWidth - 36f, ClientSize.Height - 36f);
+        var rect = new RectangleF(18f, 18f, FormWidth - 36f, _baseHeight - 36f);
         using var path = RoundedRect(rect, 16f);
         using var fill = new SolidBrush(PanelBg);
         using var edge = new Pen(PanelEdge, 1f);
@@ -472,7 +507,7 @@ internal sealed class DashboardForm : Form
 
         string label = "C" + coreIndex.ToString(CultureInfo.InvariantCulture);
         string value = tempC < 0 ? "-" : tempC.ToString(CultureInfo.InvariantCulture) + "°";
-        Color valueColor = tempC < 0 ? TextFaint : tempC <= 60 ? Accent : tempC <= 84 ? WarnAccent : HotAccent;
+        Color valueColor = tempC < 0 ? TextFaint : tempC <= 84 ? Accent : tempC <= 96 ? WarnAccent : HotAccent;
 
         using var labelBrush = new SolidBrush(TextMuted);
         using var valueBrush = new SolidBrush(valueColor);
@@ -543,7 +578,7 @@ internal sealed class DashboardForm : Form
         return y + FanPillHeight + FullSpeedExtra + SectionGap;
     }
 
-    private float DrawRestartBanner(Graphics g, float y, bool enteringFullSpeed)
+    private float DrawRestartBanner(Graphics g, float y)
     {
         var rect = new RectangleF(ContentLeft, y, ContentRight - ContentLeft, RestartBannerHeight);
         using var fill = new SolidBrush(Color.FromArgb(30, WarnAccent));
@@ -552,9 +587,8 @@ internal sealed class DashboardForm : Form
         g.FillPath(fill, path);
         g.DrawPath(edge, path);
 
-        string message = enteringFullSpeed
-            ? "Full speed applies after a restart"
-            : "Fan mode returns to normal after a restart";
+        // The banner only ever shows while entering Full Speed (leaving is live).
+        string message = "Full speed applies after a restart";
         using var textBrush = new SolidBrush(TextPrimary);
         SizeF textSize = g.MeasureString(message, LineFont);
         g.DrawString(message, LineFont, textBrush, rect.X + 16f, rect.Y + (rect.Height - textSize.Height) / 2f);
@@ -619,7 +653,7 @@ internal sealed class DashboardForm : Form
     protected override void OnMouseClick(MouseEventArgs e)
     {
         base.OnMouseClick(e);
-        PointF pt = e.Location;
+        PointF pt = new(e.X / EffScale, e.Y / EffScale);
 
         if (_quietPillRect.Contains(pt))
             ApplySelection(FanSelection.Quiet);
@@ -638,7 +672,7 @@ internal sealed class DashboardForm : Form
     protected override void OnMouseMove(MouseEventArgs e)
     {
         base.OnMouseMove(e);
-        PointF pt = e.Location;
+        PointF pt = new(e.X / EffScale, e.Y / EffScale);
         bool hovering =
             _quietPillRect.Contains(pt) ||
             _balancedPillRect.Contains(pt) ||

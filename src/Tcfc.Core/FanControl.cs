@@ -5,8 +5,8 @@ namespace Tcfc.Core;
 /// <summary>
 /// The single fan setting the UI exposes. Quiet/Balanced/Performance are the
 /// instant firmware SmartFanMode; FullSpeed is the BIOS Intelligent Cooling
-/// "Full speed" setting, which only takes effect after a reboot - both when
-/// entering it and when leaving it.
+/// "Full speed" setting, which needs a reboot to ENGAGE, but drops back to the
+/// normal curve immediately when you leave it.
 /// </summary>
 public enum FanSelection
 {
@@ -42,9 +42,10 @@ public static class FanControl
     /// <summary>
     /// Applies a selection with as few BIOS writes as possible. Switching among
     /// Quiet/Balanced/Performance is an instant SmartFanMode write; entering
-    /// FullSpeed arms the BIOS setting; leaving FullSpeed both applies the new
-    /// SmartFanMode and clears the BIOS setting so the fan drops back after the
-    /// next reboot. BIOS NVRAM already in the target state is never rewritten.
+    /// FullSpeed arms the BIOS setting (engages on the next reboot); leaving
+    /// FullSpeed applies the new SmartFanMode and clears the BIOS setting, and
+    /// the fan drops back at once. BIOS NVRAM already in the target state is
+    /// never rewritten.
     /// </summary>
     [SupportedOSPlatform("windows")]
     public static void Set(FanSelection selection)
@@ -64,13 +65,13 @@ public static class FanControl
     }
 
     /// <summary>
-    /// True when the BIOS intent disagrees with what the fan is actually doing:
-    /// the BIOS wants full speed but the fan is not maxed yet (reboot to go
-    /// loud), or the BIOS is back to stock but the fan is still maxed (reboot
-    /// to go quiet). A failed RPM read (-1) correctly counts as not maxed.
+    /// True only while Full Speed is armed in the BIOS but the fan has not
+    /// reached full speed yet - i.e. you selected Full Speed and still need to
+    /// reboot for it to engage. Leaving Full Speed takes effect immediately, so
+    /// a stock BIOS is never pending. A failed RPM read (-1) counts as not maxed.
     /// </summary>
     public static bool IsRestartPending(bool biosFullSpeed, int currentRpm)
-        => biosFullSpeed != (currentRpm >= FullSpeedRpm);
+        => biosFullSpeed && currentRpm < FullSpeedRpm;
 
     /// <summary>
     /// The SmartFanMode a selection maps to, by name - the enums' numeric
