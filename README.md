@@ -3,16 +3,17 @@
 # 🌀 ThinkCentre Fan Control
 
 **Every tool on your Lenovo ThinkCentre desktop swears the fan runs at `0` RPM.**
-### It doesn't. This reads the real speed, and lets you switch fan modes.
+### It doesn't. This reads the real speed, shows every CPU core's temperature, and switches fan modes, up to a full blast nothing else on the machine will give you.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-14b8a6?style=flat-square)](LICENSE)
 [![Platform: Windows 10/11](https://img.shields.io/badge/Windows-10_|_11-0078D6?style=flat-square&logo=windows&logoColor=white)](#install)
 [![.NET 8](https://img.shields.io/badge/.NET-8.0-512BD4?style=flat-square&logo=dotnet&logoColor=white)](#build-from-source)
 [![Latest release](https://img.shields.io/github/v/release/blazingphoenix7/thinkcentre-fan-control?style=flat-square&color=14b8a6)](../../releases/latest)
 
-A small, open-source system-tray app that shows the **real fan RPM** on Lenovo
-**ThinkCentre and ThinkStation desktops**, read straight off the embedded controller, with
-the firmware's fan modes sitting right next to it.
+A small, open-source app for Lenovo **ThinkCentre and ThinkStation desktops**. It keeps the
+**real fan RPM** in your tray, read straight off the embedded controller, and opens a window with
+**per-core CPU temperatures** and the fan modes, including a **Full Speed** setting that Vantage
+won't let you touch.
 
 ![The window: live fan RPM, per-core CPU temperatures, and the fan modes](docs/screenshots/dashboard.png)
 
@@ -33,20 +34,24 @@ behind the virtualized one that Windows gets to see. This app reads it and puts 
 
 ## What you get
 
-- 🌀 &nbsp;**Live fan RPM in your tray.** The number nothing else on the machine will show you, updated every second from the EC's tach register.
-- 🌡️ &nbsp;**A temperature readout.** The hottest live EC sensor. It's labelled "hottest sensor" and nothing fancier, because I haven't verified which sensor maps to which component.
-- 🎛️ &nbsp;**Fan modes.** Quiet, Balanced, and Performance, set through the firmware's own interface (the same one Vantage uses), so the firmware keeps regulating the curve.
-- 🪶 &nbsp;**Small and quiet.** No telemetry, no account, basically no idle cost. MIT licensed, and it only ever reads the hardware.
+- 🌀 &nbsp;**Live fan RPM.** The number nothing else on the machine will show you, in the tray and in the window, updated every second from the EC's tach register.
+- 🌡️ &nbsp;**Per-core CPU temperatures.** Every core, read from the CPU's own thermal sensors and laid out as a live graph in the window. The tray also carries the hottest EC sensor, labelled just "hottest sensor" because I haven't verified which one maps to which component.
+- 🎛️ &nbsp;**Fan modes, including Full Speed.** Quiet, Balanced, and Performance switch instantly through the firmware's own interface (the same one Vantage uses). **Full Speed** flips a BIOS setting for real maximum airflow, the loud one Vantage won't give you, and it engages on the next restart.
+- 🪟 &nbsp;**A real window, or just the tray.** Double-click the tray icon for the full readout, or leave it minimised and hover for the RPM. Your call.
+- 🪶 &nbsp;**Small and quiet.** No telemetry, no account, near-zero idle CPU and around 15 MB of memory. MIT licensed, and it never pokes the hardware with a raw write. Mode changes go through the vendor's own supported interface.
 
 ## Honest scope
 
 > **There's no manual "set it to 1,400 RPM" slider, and I'm not going to pretend there is.**
 >
-> On these desktops the writable fan control sits inside an opaque ACPI method that only gets
+> On these desktops the fine-grained fan control sits inside an opaque ACPI method that only gets
 > loaded at runtime, with no register you can actually reach. I write-tested the EC directly and
-> it isn't there. So control here is presets, not a dial. What is here, live RPM and firmware
-> modes, is real, tested on hardware, and already more than anything else on these machines gives
-> you. If you want the gory details, they're in [How it works](#how-it-works).
+> it isn't there, so the dial is out.
+>
+> Everything else here is real and tested on hardware: live RPM, per-core temps, the firmware's
+> presets, and **Full Speed**, a genuine maximum that turned out to be writable from Windows even
+> though Vantage refuses to expose it (it sets a BIOS value, so it takes a restart to kick in). No
+> fake numbers, no pretend control. If you want the gory details, they're in [How it works](#how-it-works).
 
 ## Install
 
@@ -76,23 +81,29 @@ since it asks for elevation). A small fan icon shows up in your tray, possibly h
 ## Use it
 
 - **Hover** the tray icon and the tooltip shows your live fan RPM.
-- **Right-click** it for the menu:
-  - A header line, `RPM <n>  |  hottest sensor <n> °C`, that updates every second.
+- **Double-click** it to open the window: the big live RPM, a per-core temperature graph, the four fan modes, and a Start-with-Windows toggle. Closing the window drops it back to the tray, it doesn't quit.
+- **Right-click** the icon for a quick menu:
+  - A header line, `RPM <n>  |  hottest sensor <n> °C`, refreshed when you open it.
   - **Fan mode**, with Quiet, Balanced, and Performance. Click one to switch, and a check mark shows the current mode.
   - **Start with Windows**, which launches it at logon as an elevated scheduled task (so no UAC prompt on every boot).
   - **Exit.**
 
-The modes just pick the firmware's own thermal profile. Quiet keeps the fan calmer, Performance
-lets it ramp up sooner. They're presets that the firmware still regulates, not a raw override.
+Quiet, Balanced, and Performance are the firmware's own thermal profiles. Quiet keeps the fan
+calmer, Performance lets it ramp sooner, and the firmware still regulates the curve underneath.
+**Full Speed** (in the window) is the exception: it forces the fan flat out through a BIOS setting,
+so it takes a restart to turn on, and another to turn back off.
 
 ## Supported hardware
 
 I've only verified this on a **ThinkCentre M70t Gen 6** (baseboard product `3376`).
 
-| Board | Monitoring | Fan modes |
+| Board | Fan RPM + EC temps | Fan modes + Full Speed |
 |---|---|---|
 | **ThinkCentre M70t Gen 6** (`3376`) | ✅ Correct | ✅ Enabled |
 | Other ThinkCentre / ThinkStation desktops | ⚠️ Uses the M70t layout, so readings **may be wrong** | 🔒 Disabled (it won't write an unverified board) |
+
+Per-core CPU temperatures read from the processor itself, so they're correct on any Intel machine
+no matter the board.
 
 Want your model to work? The EC register layout has to be mapped per board.
 [Open an issue](../../issues) with your model name and baseboard product and we can sort it out.
@@ -108,8 +119,16 @@ its RAM through the signed [PawnIO](https://pawnio.eu/) driver and diffed it whi
 up and down under CPU load. That located the tach, a 16-bit big-endian value at `0x00:0x01`, which
 I confirmed against a full load and spin-down curve. The temperatures sit at `0x21` to `0x2F`.
 
-The fan modes were easier. There's a Lenovo WMI method (`SetSmartFanMode`) that the firmware
-honours, and I verified the writes on the actual board.
+The per-core CPU temperatures don't touch the EC at all. They come straight from the processor:
+each core's `IA32_THERM_STATUS` MSR (read through the same PawnIO driver), minus the offset from
+Tjmax. That's why they're labelled per core and not guessed at.
+
+The presets were easy: a Lenovo WMI method (`SetSmartFanMode`) that the firmware honours, verified
+on the actual board. **Full Speed** was the surprise. Lenovo's BIOS has an "Intelligent Cooling"
+setting with a "Full speed" option, and that setting turns out to be writable from Windows through
+Lenovo's own BIOS WMI, even though Vantage never exposes it. So the app can put the fan flat out
+without you ever opening the BIOS. The catch is it's a firmware setting, so it only engages after a
+restart.
 
 The fine-grained slider is the part I couldn't ship. The write path is an ACPI method (`_FSL`
 calling `FNSL`) buried in a table that only exists at runtime, and reaching it needs a signed
@@ -145,6 +164,7 @@ There's also a console tool that builds alongside the tray (it isn't in the rele
 
 ```
 Tcfc.Cli monitor                            # live RPM, the full 15-byte EC temp block, and mode
+Tcfc.Cli temps                              # Tjmax and every CPU core's temperature
 Tcfc.Cli mode                               # show the current and supported modes
 Tcfc.Cli mode quiet|balanced|performance    # set a mode (verified board only)
 ```
@@ -156,6 +176,7 @@ Tcfc.Cli mode quiet|balanced|performance    # set a mode (verified board only)
 | **"EC not available"** on launch | You're not running as **Administrator**, **PawnIO isn't installed**, or `LpcACPIEC.bin` isn't next to the exe (it ships in the ZIP, so keep the files together). |
 | Tray shows **`- RPM`** | A read timed out, usually because another EC or fan tool is holding the EC lock (close it), or you're not elevated. |
 | **Fan modes greyed out** ("monitoring only") | Your board isn't the verified `3376`, so control is gated for safety ([see above](#supported-hardware)). |
+| **Full Speed didn't do anything** | It's a BIOS setting, so it only takes effect after a **restart** (and stays on until you pick another mode and restart again). |
 | **"Windows protected your PC"** | Unsigned exe. Click **More info**, then **Run anyway**, or [build from source](#build-from-source). |
 
 ## License
