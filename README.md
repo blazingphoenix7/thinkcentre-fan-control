@@ -14,7 +14,7 @@ A small, open-source system-tray app that shows the **real fan RPM** on Lenovo
 **ThinkCentre and ThinkStation desktops**, read straight off the embedded controller, with
 the firmware's fan modes sitting right next to it.
 
-![Live fan RPM climbing under load, read straight from the embedded controller](docs/screenshots/demo.gif)
+![The window: live fan RPM, per-core CPU temperatures, and the fan modes](docs/screenshots/dashboard.png)
 
 </div>
 
@@ -30,12 +30,6 @@ desktop how fast its fan is spinning. They all give you the same answer:
 The fan is obviously spinning, so that reading is just wrong. The firmware hides the real sensor
 from the OS. The actual number lives one layer down, on a physical embedded controller sitting
 behind the virtualized one that Windows gets to see. This app reads it and puts it in your tray.
-
-<div align="center">
-
-![The tray readout: live RPM, hottest sensor, and firmware fan modes](docs/screenshots/monitor.png)
-
-</div>
 
 ## What you get
 
