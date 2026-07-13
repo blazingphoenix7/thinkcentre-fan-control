@@ -158,7 +158,6 @@ internal sealed class DashboardForm : Form
     private int _lastRpm = -1;
     private int[]? _lastCoreTemps;
     private int _tickCount; // gates the per-core temp read in DoTick to every other tick
-    private int _tjmax;
     private FanSelection? _currentSelection; // null until the first successful WMI read
     private bool _biosFullSpeed;
     private bool _autostartEnabled;
@@ -332,18 +331,6 @@ internal sealed class DashboardForm : Form
         catch
         {
             // keep whatever was cached before; a stale reading beats a fake one
-        }
-
-        if (_cpu is not null)
-        {
-            try
-            {
-                _tjmax = _cpu.Tjmax();
-            }
-            catch
-            {
-                // leave _tjmax at its previous value (0 initially - suppressed in the draw)
-            }
         }
 
         try
@@ -631,13 +618,17 @@ internal sealed class DashboardForm : Form
         var frame = new RectangleF(ContentLeft, y, ContentWidth, TitleBlockH);
         g.DrawRectangle(BoxPen, frame.X, frame.Y, frame.Width, frame.Height);
 
-        string tjmax = _tjmax > 0 ? _tjmax.ToString(CultureInfo.InvariantCulture) + " °C" : "N/A";
+        int hottestC = -1;
+        if (_lastCoreTemps is not null)
+            foreach (int t in _lastCoreTemps)
+                if (t > hottestC) hottestC = t;
+        string hottest = hottestC >= 0 ? hottestC.ToString(CultureInfo.InvariantCulture) + " °C" : "N/A";
         string boardValue = _board is null ? "UNSUPPORTED" : "LENOVO " + _board;
         (string label, string value)[] cells =
         {
             ("READS", "RPM + " + _coreCount.ToString(CultureInfo.InvariantCulture) + " CORES"),
             ("BOARD", boardValue),
-            ("TJMAX", tjmax),
+            ("HOTTEST", hottest),
             ("DRIVER", "PAWNIO · SIGNED"),
         };
 
