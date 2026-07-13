@@ -24,7 +24,7 @@ internal static class Program
     private const string FrameCheckName = "_frame_check.png";
 
     private const int CoreCount = 10;
-    private const int Tjmax = 105;
+    private const string Board = "3376"; // the detected M70T board number the demo shows
 
     private const int IdleRpm = 900;
     private const int PeakRpm = 3970;
@@ -33,14 +33,13 @@ internal static class Program
 
     // Ping-pong: ease up over UpFrames steps, then ease back down over
     // DownFrames without repeating the peak or trough frame, so the loop has
-    // no stutter or held duplicate at either end. Each 880-wide frame is a full
-    // independent image in the stream (~240 KB), so the frame count is the main
-    // lever on file size; 26 keeps the eased ramp smooth while landing the gif
-    // well under GitHub's image-proxy ceiling.
+    // no stutter or held duplicate at either end. Each 1040-wide frame is a full
+    // independent image in the stream, so the frame count is the main lever on
+    // file size; 26 keeps the eased ramp smooth while landing the gif well under
+    // GitHub's image-proxy ceiling.
     private const int UpFrames = 14;
     private const int DownFrames = UpFrames - 2;
     private const int FrameDelayMs = 80;
-    private const int HistoryCapacity = 60; // matches DashboardForm's sparkline queue depth
 
     // rpm near which the verification frame should land, while Full Speed is active.
     private const int FrameCheckTargetRpm = 3900;
@@ -111,7 +110,7 @@ internal static class Program
     }
 
     // One point in the animation: everything CardRenderer.Render needs for one frame.
-    private readonly record struct Frame(int Rpm, int[] CoreTemps, int ModeIndex, int[] History);
+    private readonly record struct Frame(int Rpm, int[] CoreTemps, int ModeIndex);
 
     private static List<Frame> BuildTimeline()
     {
@@ -132,7 +131,6 @@ internal static class Program
         }
 
         var frames = new List<Frame>(total);
-        var history = new List<int>(HistoryCapacity);
         for (int k = 0; k < total; k++)
         {
             float p = progress[k];
@@ -146,11 +144,7 @@ internal static class Program
                 coreTemps[c] = (int)MathF.Round(Lerp(IdleTempC, PeakTempC, coreProgress));
             }
 
-            history.Add(rpm);
-            if (history.Count > HistoryCapacity)
-                history.RemoveAt(0);
-
-            frames.Add(new Frame(rpm, coreTemps, ModeIndexFor(p), history.ToArray()));
+            frames.Add(new Frame(rpm, coreTemps, ModeIndexFor(p)));
         }
         return frames;
     }
@@ -176,7 +170,7 @@ internal static class Program
         try
         {
             foreach (Frame f in timeline)
-                bitmaps.Add(renderer.Render(f.Rpm, f.CoreTemps, f.ModeIndex, f.History, Tjmax));
+                bitmaps.Add(renderer.Render(f.Rpm, f.CoreTemps, f.ModeIndex, Board));
             AnimatedGif.Save(path, bitmaps, FrameDelayMs);
         }
         finally
@@ -208,7 +202,7 @@ internal static class Program
 
     private static void SaveFrameCheck(CardRenderer renderer, Frame frame, string path)
     {
-        using Bitmap bmp = renderer.Render(frame.Rpm, frame.CoreTemps, frame.ModeIndex, frame.History, Tjmax);
+        using Bitmap bmp = renderer.Render(frame.Rpm, frame.CoreTemps, frame.ModeIndex, Board);
         bmp.Save(path, ImageFormat.Png);
     }
 

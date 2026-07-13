@@ -36,7 +36,7 @@ the number in your tray.
 ## What you get
 
 - 🌀 &nbsp;**Live fan RPM.** The number nothing else will give you, in the tray and the window, straight off the EC's tach register once a second.
-- 🌡️ &nbsp;**Per-core CPU temperatures.** Every core, read from the CPU's own thermal sensors and drawn as a live graph. The tray also carries the hottest EC sensor, called "hottest sensor" and not "CPU" because I still haven't nailed down which physical part it maps to.
+- 🌡️ &nbsp;**Per-core CPU temperatures.** Every core, read from the CPU's own thermal sensors and drawn as a live graph in the window. The hottest core is called out in both the window and the tray, so a glance tells you how hot it's running.
 - 🎛️ &nbsp;**Fan modes, Full Speed and all.** Quiet, Balanced, and Performance flip instantly through the firmware, the exact path Vantage uses. **Full Speed** trips a BIOS setting for real maximum airflow, the loud one Vantage hides from you, and it kicks in on the next restart.
 - 🪟 &nbsp;**A window, or just the tray.** Double-click for the whole readout, or leave it tucked away and hover for the RPM. Whatever you're into.
 - 🪶 &nbsp;**Barely there.** No telemetry, no account, basically no idle CPU, around 15 MB sitting in the tray. MIT licensed. And it never pokes the chip with a raw write, mode changes ride the vendor's own supported interface.
@@ -86,7 +86,7 @@ arrow.
 - **Hover** the tray icon and the tooltip gives you the live RPM.
 - **Double-click** it for the window: the big RPM, the per-core graph, the four fan modes, a Start-with-Windows toggle. Closing the window just drops it back to the tray, it doesn't quit.
 - **Right-click** for the quick menu:
-  - A header line, `RPM <n>  |  hottest sensor <n> °C`, refreshed when you open it.
+  - A header line, `RPM <n>  |  hottest core <n> °C`, refreshed when you open it.
   - **Fan mode** (Quiet, Balanced, Performance). Click one to switch, a check marks the current one.
   - **Start with Windows**, which sets up an elevated logon task so you're not clicking UAC every boot.
   - **Exit.**
@@ -143,7 +143,7 @@ write-up, dead ends and all:
 
 - [Design spec and decisions](docs/specs/2026-07-08-thinkcentre-fan-control-design.md): architecture, safety gates, the pivot.
 - [EC decode](docs/research/ec-decode-m70t.md): the stubbed ACPI EC, the physical one behind it, the tach hunt, the write-test that killed the slider.
-- [Temperature labelling](docs/research/temp-labeling.md): why the sensors read "hottest sensor" and not "CPU."
+- [Temperature labelling](docs/research/temp-labeling.md): the EC's temperature sensors and why their mapping stays unverified.
 - [On-hardware verification](docs/research/v1-cli-verify.md): RPM 932 idle, about 2,800 under load, matching the probe data.
 
 </details>
