@@ -55,7 +55,7 @@ internal sealed class TrayApp : ApplicationContext
         // verbatim in the dashboard's header + title block, so both agree.
         _board = TryReadBoardProduct();
 
-        _header = new ToolStripMenuItem(_ec is null ? EcUnavailableText : "RPM -  |  hottest sensor - C")
+        _header = new ToolStripMenuItem(_ec is null ? EcUnavailableText : "RPM -  |  hottest core - C")
         {
             Enabled = false,
         };
@@ -157,9 +157,8 @@ internal sealed class TrayApp : ApplicationContext
         }
     }
 
-    // Refreshes the menu header's RPM + hottest-sensor line and the autostart
-    // check. Only runs when the menu is opening, since it reads the whole
-    // temperature block on top of the RPM.
+    // Refreshes the menu header's RPM + hottest-core line and the autostart
+    // check. Only runs when the menu is opening.
     private void OnMenuOpening()
     {
         _autostartItem.Checked = Autostart.IsEnabled();
@@ -170,14 +169,32 @@ internal sealed class TrayApp : ApplicationContext
         {
             int rpm = _ec.Rpm();
             string rpmText = rpm < 0 ? "-" : rpm.ToString();
-            // "hottest sensor", not "CPU": the sensor-to-component mapping is
-            // unverified (docs/research/temp-labeling.md)
-            int? hottest = TempSummary.Representative(_ec.Temps());
-            _header.Text = $"RPM {rpmText}  |  hottest sensor {hottest?.ToString() ?? "-"} C";
+            int? hottest = HottestCore(); // the CPU cores, same as the dashboard, so the two agree
+            _header.Text = $"RPM {rpmText}  |  hottest core {hottest?.ToString() ?? "-"} C";
         }
         catch
         {
             // leave the last header; the next open retries
+        }
+    }
+
+    // The hottest CPU core right now, or null if per-core temps aren't
+    // available. Matches the dashboard's HOTTEST cell so the tray and the
+    // window never disagree.
+    private int? HottestCore()
+    {
+        if (_cpu is null)
+            return null;
+        try
+        {
+            int max = -1;
+            foreach (int t in _cpu.PerCore())
+                if (t > max) max = t;
+            return max >= 0 ? max : null;
+        }
+        catch
+        {
+            return null;
         }
     }
 
