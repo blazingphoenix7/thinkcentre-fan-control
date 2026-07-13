@@ -80,10 +80,11 @@ internal sealed class DashboardForm : Form
     private static readonly StringFormat TightFormat = new(StringFormat.GenericTypographic);
 
     private const int FormWidth = 520;
-    // Logical zoom at 96 DPI; the real paint-time scale is this times the
-    // monitor's DPI ratio (see EffScale), so the window is a consistent
-    // physical size on any display.
-    private const float UiScale = 1f;
+    // Overall size knob. Logical zoom at 96 DPI; the real paint-time scale is
+    // this times the monitor's DPI ratio (see EffScale), so the whole window,
+    // frame plus text and spacing together, scales as one and stays a
+    // consistent physical size on any display.
+    private const float UiScale = 1.15f;
 
     private const float PadX = 26f;
     private const float PadTop = 24f;
