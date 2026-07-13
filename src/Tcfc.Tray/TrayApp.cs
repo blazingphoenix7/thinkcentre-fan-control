@@ -16,6 +16,7 @@ internal sealed class TrayApp : ApplicationContext
 
     private readonly EcReader? _ec;
     private readonly CpuTemps? _cpu;
+    private readonly string? _board; // Win32_BaseBoard.Product, read once (WMI is slow); reused for the gate and the dashboard
     private readonly Icon _fanIcon;
     private readonly NotifyIcon _notifyIcon;
     private readonly ContextMenuStrip _menu;
@@ -50,6 +51,10 @@ internal sealed class TrayApp : ApplicationContext
             _cpu = null;
         }
 
+        // Read the real board once. It gates the mode presets below AND is shown
+        // verbatim in the dashboard's header + title block, so both agree.
+        _board = TryReadBoardProduct();
+
         _header = new ToolStripMenuItem(_ec is null ? EcUnavailableText : "RPM -  |  hottest sensor - C")
         {
             Enabled = false,
@@ -57,7 +62,7 @@ internal sealed class TrayApp : ApplicationContext
 
         // Same board gate as the CLI; a WMI hiccup counts as unsupported.
         ToolStripMenuItem modeSection;
-        if (MachineGuard.IsSupportedBoard(TryReadBoardProduct()))
+        if (MachineGuard.IsSupportedBoard(_board))
         {
             _modeItems = new[]
             {
@@ -251,12 +256,13 @@ internal sealed class TrayApp : ApplicationContext
     }
 
     // Lazily creates the one dashboard instance, then (re)shows it. Reused
-    // across opens so the RPM history chart keeps rolling in the background.
+    // across opens. The detected board is handed in so the dashboard can show
+    // the real value without repeating the slow WMI read.
     private void ShowDashboard()
     {
         if (_dashboard is null)
         {
-            _dashboard = new DashboardForm(_ec, _cpu);
+            _dashboard = new DashboardForm(_ec, _cpu, _board);
             // When the window is closed back to the tray, hand its paint-time
             // working set back to the OS.
             _dashboard.VisibleChanged += (_, _) =>
