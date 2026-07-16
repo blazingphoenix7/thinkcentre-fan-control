@@ -108,7 +108,7 @@ I've only actually verified a **ThinkCentre M70t Gen 6** (baseboard `3376`).
 Per-core CPU temps come straight from the processor, so those are right on any Intel machine no
 matter the board.
 
-Different model? The EC register layout has to be mapped board by board.
+Got a different one, an M70q, M710q, M720q, M920q, a bigger ThinkStation, whatever? The EC register layout has to be mapped board by board.
 [Open an issue](../../issues) with your model and baseboard product and I'll dig into it.
 
 ## How it works
