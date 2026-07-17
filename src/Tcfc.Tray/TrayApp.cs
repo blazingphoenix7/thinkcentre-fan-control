@@ -104,7 +104,7 @@ internal sealed class TrayApp : ApplicationContext
         // Re-query the scheduled task on every open: it can change behind our back.
         _menu.Opening += (_, _) => OnMenuOpening();
 
-        _fanIcon = CreateFanIcon();
+        _fanIcon = AppIcon.Load() ?? CreateFanIcon();
         _notifyIcon = new NotifyIcon
         {
             Icon = _fanIcon,

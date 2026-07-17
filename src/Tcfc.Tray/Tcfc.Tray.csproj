@@ -7,6 +7,10 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
 
+    <!-- App icon: the exe's Win32 icon (taskbar, shortcut) and, embedded
+         below, the tray and window icon loaded at runtime. -->
+    <ApplicationIcon>app.ico</ApplicationIcon>
+
     <!-- Efficiency: this tray sits resident 24/7. Skip loading the ICU
          globalization tables (the UI is invariant-culture only) and drop the
          background GC thread - the app allocates almost nothing at idle. -->
@@ -23,6 +27,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Tcfc.Core\Tcfc.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Embed the icon so the tray and window can load it at runtime. -->
+  <ItemGroup>
+    <EmbeddedResource Include="app.ico" />
   </ItemGroup>
 
   <!-- Bundle the signed PawnIO EC module next to the exe when it is present (release

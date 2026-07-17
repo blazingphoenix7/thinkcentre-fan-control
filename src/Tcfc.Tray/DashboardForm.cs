@@ -181,6 +181,8 @@ internal sealed class DashboardForm : Form
         _coreCount = _cpuAvailable ? Environment.ProcessorCount : 0;
 
         Text = "ThinkCentre Fan Control";
+        if (AppIcon.Load() is { } appIcon)
+            Icon = appIcon;
         FormBorderStyle = FormBorderStyle.FixedSingle;
         MaximizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;

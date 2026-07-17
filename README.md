@@ -1,6 +1,8 @@
 <div align="center">
 
-# 🌀 ThinkCentre Fan Control
+<img src="docs/icon.png" alt="ThinkCentre Fan Control" width="112" height="112">
+
+# ThinkCentre Fan Control
 
 **Every tool on your Lenovo ThinkCentre desktop swears the fan runs at `0` RPM.**
 ### It's spinning, obviously. This one actually reads how fast. It also shows you every core's temperature and hands you the fan modes, right up to a full blast nothing else will.
